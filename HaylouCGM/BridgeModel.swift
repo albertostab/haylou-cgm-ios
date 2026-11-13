@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 import CoreBluetooth
+import UIKit
 import BackgroundTasks
 
 /// Prototipo NON medicale: il watch non comunica l'effettivo aggiornamento del display.
@@ -20,6 +21,12 @@ final class BridgeModel: NSObject, ObservableObject, CBCentralManagerDelegate, C
     @Published var lastQueuedReading: Int64 = 0
     @Published var lastReply = "Nessuna risposta ricevuta"
     @Published var diagnostic = "Avvia dall'iPhone con Bluetooth acceso"
+    @Published var lastNightscoutCheck: Date?
+    @Published var lastNightscoutSuccess: Date?
+    @Published var lastBLEEvent: Date?
+    @Published var lastBLEEventKind = "Nessun evento BLE ricevuto"
+    @Published var backgroundBLEWakeCount = 0
+    @Published var eventLog: [String] = []
 
     struct Reading {
         let value: Int
@@ -44,6 +51,19 @@ final class BridgeModel: NSObject, ObservableObject, CBCentralManagerDelegate, C
     private var inFlight = false
     private var appInForeground = true
     private var lastBackgroundRefresh: Date?
+    private var lastBLETriggeredCheck: Date?
+    private static let eventDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "dd/MM HH:mm:ss"
+        f.timeZone = TimeZone(identifier: "Europe/Rome")
+        return f
+    }()
+    private func recordEvent(_ event: String) {
+        let line = "\(Self.eventDateFormatter.string(from: Date())) · \(event)"
+        eventLog.insert(line, at: 0)
+        if eventLog.count > 40 { eventLog = Array(eventLog.prefix(40)) }
+        UserDefaults.standard.set(eventLog, forKey: "background-event-log")
+    }
     var isConnected: Bool { activePeripheral?.state == .connected && writeCharacteristic != nil }
 
     private override init() {
@@ -51,6 +71,11 @@ final class BridgeModel: NSObject, ObservableObject, CBCentralManagerDelegate, C
         nightscoutURL = UserDefaults.standard.string(forKey: "nightscout-url") ?? nightscoutURL
         token = KeychainStore.load()
         automatic = UserDefaults.standard.bool(forKey: "automatic-enabled")
+        lastNightscoutCheck = UserDefaults.standard.object(forKey: "last-nightscout-check") as? Date
+        lastNightscoutSuccess = UserDefaults.standard.object(forKey: "last-nightscout-success") as? Date
+        lastBLEEvent = UserDefaults.standard.object(forKey: "last-ble-event") as? Date
+        backgroundBLEWakeCount = UserDefaults.standard.integer(forKey: "background-ble-wake-count")
+        eventLog = UserDefaults.standard.stringArray(forKey: "background-event-log") ?? []
         lastQueuedReading = Int64(UserDefaults.standard.object(forKey: "last-queued-ms") as? Int ?? 0)
         if let t = UserDefaults.standard.object(forKey: "last-queued-at") as? Date { lastQueued = t }
         central = CBCentralManager(delegate: self, queue: .main,
@@ -81,10 +106,12 @@ final class BridgeModel: NSObject, ObservableObject, CBCentralManagerDelegate, C
         restartTimerIfNeeded()
         if enabled {
             diagnostic = "Sessione abilitata; iOS può sospendere il polling a schermo bloccato"
+            recordEvent("Invio automatico attivato")
             refreshNow()
             AppDelegate.scheduleBackgroundRefresh()
         } else {
             diagnostic = "Invio automatico disattivato. Il watch potrebbe mostrare l'ultimo valore."
+            recordEvent("Invio automatico disattivato")
         }
     }
 
@@ -104,15 +131,20 @@ final class BridgeModel: NSObject, ObservableObject, CBCentralManagerDelegate, C
         appInForeground = foreground
         if foreground {
             diagnostic = "In primo piano: controllo immediato Nightscout"
+            recordEvent("App in primo piano")
             if automatic { refreshNow() }
         } else {
             diagnostic = "In background: aggiornamenti solo se iOS concede esecuzione"
+            recordEvent("App in background o schermo bloccato")
             AppDelegate.scheduleBackgroundRefresh()
         }
     }
 
     /// Chiamato anche da BGAppRefreshTask quando iOS decide di concederlo.
-    func refreshNow(completion: @escaping (Bool) -> Void = { _ in }) {
+    func refreshNow(reason: String = "manuale/timer", completion: @escaping (Bool) -> Void = { _ in }) {
+        lastNightscoutCheck = Date()
+        UserDefaults.standard.set(lastNightscoutCheck, forKey: "last-nightscout-check")
+        recordEvent("Nightscout: controllo (\(reason))")
         guard !inFlight else { completion(false); return }
         guard let base = URL(string: nightscoutURL), base.scheme == "https", base.host != nil,
               base.user == nil, base.password == nil,
@@ -128,7 +160,8 @@ final class BridgeModel: NSObject, ObservableObject, CBCentralManagerDelegate, C
         guard let apiURL = components?.url else {
             inFlight = false; completion(false); return
         }
-        var request = URLRequest(url: apiURL, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 25)
+        var request = URLRequest(url: apiURL, cachePolicy: .reloadIgnoringLocalCacheData,
+                                 timeoutInterval: UIApplication.shared.applicationState == .active ? 25 : 8)
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         // Non stampare mai request.url: contiene il token nell'eventuale query.
         URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
@@ -157,6 +190,9 @@ final class BridgeModel: NSObject, ObservableObject, CBCentralManagerDelegate, C
                         completion(false); return
                     }
                     self.latest = fresh
+                    self.lastNightscoutSuccess = Date()
+                    UserDefaults.standard.set(self.lastNightscoutSuccess, forKey: "last-nightscout-success")
+                    self.recordEvent(fresh.fresh ? "Nightscout: risposta valida" : "Nightscout: risposta obsoleta, non inviata")
                     self.nightscoutStatus = fresh.fresh ? "Lettura ricevuta da Nightscout" : "Lettura vecchia: invio bloccato"
                     if self.automatic { self.sendIfNew(fresh) }
                     completion(true)
@@ -221,6 +257,7 @@ final class BridgeModel: NSObject, ObservableObject, CBCentralManagerDelegate, C
             UserDefaults.standard.set(Int(reading.timestampMS), forKey: "last-queued-ms")
             UserDefaults.standard.set(lastQueued, forKey: "last-queued-at")
             diagnostic = "Scrittura BLE richiesta: \(reading.value) mg/dL → \(approx.shownFahrenheit) °F (±\(approx.difference)). Ricezione non confermata."
+            recordEvent("BLE: scrittura richiesta, display NON confermato")
         } catch {
             diagnostic = "Errore encoder: \(error.localizedDescription)"
         }
@@ -237,6 +274,7 @@ final class BridgeModel: NSObject, ObservableObject, CBCentralManagerDelegate, C
     }
     func centralManager(_ central: CBCentralManager, willRestoreState dict: [String: Any]) {
         let restored = dict[CBCentralManagerRestoredStatePeripheralsKey] as? [CBPeripheral] ?? []
+        recordEvent("Core Bluetooth: ripristino sessione (\(restored.count) periferiche)")
         if let device = restored.first {
             activePeripheral = device
             device.delegate = self
@@ -258,6 +296,7 @@ final class BridgeModel: NSObject, ObservableObject, CBCentralManagerDelegate, C
         activePeripheral = peripheral
         peripheral.delegate = self
         bluetoothStatus = "Connesso, identifico servizi..."
+        recordEvent("Core Bluetooth: connessione stabilita")
         peripheral.discoverServices([CBUUID(string: WeatherCodec.serviceUUID)])
     }
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
@@ -268,6 +307,7 @@ final class BridgeModel: NSObject, ObservableObject, CBCentralManagerDelegate, C
         writeCharacteristic = nil
         bluetoothStatus = "Disconnesso: \(error?.localizedDescription ?? "nessun errore")"
         diagnostic = "Nessun nuovo invio: il quadrante può mostrare una glicemia obsoleta"
+        recordEvent("Core Bluetooth: periferica disconnessa")
         if automatic { central.connect(peripheral, options: [CBConnectPeripheralOptionNotifyOnDisconnectionKey: true]) }
     }
     func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
@@ -291,12 +331,38 @@ final class BridgeModel: NSObject, ObservableObject, CBCentralManagerDelegate, C
         }
         if writeCharacteristic != nil {
             bluetoothStatus = "Haylou RT2 pronto"
-            if automatic { refreshNow() }
+            recordEvent("Core Bluetooth: caratteristica meteo pronta")
+            if automatic { refreshNow(reason: "connessione BLE") }
         } else { bluetoothStatus = "Caratteristica 000002FF mancante" }
     }
+    func peripheral(_ peripheral: CBPeripheral, didUpdateNotificationStateFor characteristic: CBCharacteristic,
+                    error: Error?) {
+        let ok = error == nil && characteristic.isNotifying
+        recordEvent("BLE: \(characteristic.uuid.uuidString) notifiche \(ok ? "attive" : "non attive")")
+    }
+
     func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
-        guard error == nil, let data = characteristic.value else { return }
-        lastReply = data.map { String(format: "%02x", $0) }.joined(separator: " ")
+        guard error == nil, let data = characteristic.value else {
+            recordEvent("BLE: evento non leggibile")
+            return
+        }
+        lastReply = data.prefix(32).map { String(format: "%02x", $0) }.joined(separator: " ")
+        lastBLEEvent = Date()
+        lastBLEEventKind = characteristic.uuid.uuidString
+        UserDefaults.standard.set(lastBLEEvent, forKey: "last-ble-event")
+        recordEvent("BLE: notifica da \(characteristic.uuid.uuidString), \(data.count) byte")
+
+        // Soltanto notifiche spontanee dal watch possono risvegliare un central sospeso.
+        // Senza eventi l'iPhone non garantisce polling periodico; non forzare timer falsi.
+        guard automatic, UIApplication.shared.applicationState != .active, isConnected, !inFlight else { return }
+        let now = Date()
+        guard now.timeIntervalSince(lastBLETriggeredCheck ?? .distantPast) >= 75,
+              now.timeIntervalSince(lastNightscoutCheck ?? .distantPast) >= 55 else { return }
+        lastBLETriggeredCheck = now
+        backgroundBLEWakeCount += 1
+        UserDefaults.standard.set(backgroundBLEWakeCount, forKey: "background-ble-wake-count")
+        recordEvent("Risveglio BLE in background: controllo Nightscout")
+        refreshNow(reason: "notifica BLE background")
     }
     func peripheralIsReady(toSendWriteWithoutResponse peripheral: CBPeripheral) {
         if automatic { refreshNow() }

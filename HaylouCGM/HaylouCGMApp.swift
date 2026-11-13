@@ -14,8 +14,16 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
             Self.scheduleBackgroundRefresh()
             let bridge = BridgeModel.shared
             guard bridge.automatic else { task.setTaskCompleted(success: true); return }
-            task.expirationHandler = { task.setTaskCompleted(success: false) }
-            bridge.refreshNow { success in task.setTaskCompleted(success: success) }
+            var completed = false
+            func finishOnce(_ success: Bool) {
+                DispatchQueue.main.async {
+                    guard !completed else { return }
+                    completed = true
+                    task.setTaskCompleted(success: success)
+                }
+            }
+            task.expirationHandler = { finishOnce(false) }
+            bridge.refreshNow(reason: "BGAppRefreshTask") { success in finishOnce(success) }
         }
         if BridgeModel.shared.automatic { Self.scheduleBackgroundRefresh() }
         return true
@@ -117,10 +125,26 @@ struct BridgeView: View {
                             Text("Ultima scrittura richiesta: \(bridge.lastQueued.map { df.string(from: $0) } ?? "Mai")")
                             Text("Ultimo dato richiesto: \(bridge.lastQueuedReading > 0 ? df.string(from: Date(timeIntervalSince1970: Double(bridge.lastQueuedReading) / 1000)) : "Mai")")
                             Text("Ricezione BLE: \(bridge.lastReply)")
+                            Text("Ultimo controllo Nightscout: \(bridge.lastNightscoutCheck.map { df.string(from: $0) } ?? "Mai")")
+                            Text("Ultima risposta Nightscout: \(bridge.lastNightscoutSuccess.map { df.string(from: $0) } ?? "Mai")")
+                            Text("Ultima notifica dal watch: \(bridge.lastBLEEvent.map { df.string(from: $0) } ?? "Mai")")
+                            Text("Notifiche BLE background che hanno attivato un controllo: \(bridge.backgroundBLEWakeCount)")
                             Text(bridge.diagnostic)
                             Text("Write Without Response: richiesta di invio ≠ aggiornamento confermato del display.")
                                 .foregroundStyle(.orange)
                         }.font(.caption).frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    GroupBox("5 · Eventi background (ultimi 15)") {
+                        VStack(alignment: .leading, spacing: 5) {
+                            if bridge.eventLog.isEmpty {
+                                Text("Nessun evento disponibile")
+                            }
+                            ForEach(Array(bridge.eventLog.prefix(15).enumerated()), id: \.offset) { item in
+                                Text(item.element).font(.caption2).textSelection(.enabled)
+                            }
+                            Text("Notifiche BLE possono risvegliare l'app; non garantiscono invii ogni minuto.")
+                                .foregroundStyle(.orange)
+                        }.frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
                 .padding()
