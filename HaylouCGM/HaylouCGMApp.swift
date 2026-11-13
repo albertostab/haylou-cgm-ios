@@ -61,7 +61,7 @@ struct BridgeView: View {
                         Text(bridge.latest == nil ? "—" : String(bridge.latest!.value))
                             .font(.system(size: 67, weight: .bold, design: .rounded))
                             .monospacedDigit()
-                        Text("mg/dL · \(bridge.latest?.direction ?? "—")").font(.headline)
+                        Text("mg/dL · \(Trend.symbol(bridge.latest?.direction ?? ""))").font(.headline)
                         if let reading = bridge.latest {
                             Text("Lettura: \(df.string(from: reading.date))")
                                 .font(.caption)
@@ -121,6 +121,7 @@ struct BridgeView: View {
                                 .font(.caption).foregroundStyle(.orange)
                         }
                     }
+                    Text(Trend.legend).font(.caption).foregroundStyle(.secondary)
                     GroupBox("4 · Diagnostica") {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Ultima scrittura richiesta: \(bridge.lastQueued.map { df.string(from: $0) } ?? "Mai")")

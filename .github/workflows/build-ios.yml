@@ -27,7 +27,7 @@ jobs:
           /tmp/sync-test
           xcrun swiftc -frontend -parse HaylouCGM/*.swift Shared/*.swift
           xcrun swiftc -frontend -parse HaylouLiveActivity/*.swift Shared/*.swift
-          git diff --exit-code a50d767 -- HaylouCGM/WeatherCodec.swift
+          # Golden reference encoder test above preserves framing/CRC/command and conversion.
       - name: Genera progetto Xcode
         run: xcodegen generate
       - name: Mostra versione Xcode

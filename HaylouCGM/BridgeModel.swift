@@ -248,7 +248,7 @@ final class BridgeModel: NSObject, ObservableObject, CBCentralManagerDelegate, C
                     }
                     self.recordEvent("CGM timestamp=\(fresh.timestampMS); age=\(Int(fresh.ageSeconds))s")
                     self.latest = fresh
-                    LiveSession.shared.update(glucose: fresh.value, reading: fresh.date, write: self.lastQueued, status: fresh.fresh ? "Nightscout recente; display non confermato" : "Dato obsoleto: invio bloccato")
+                    LiveSession.shared.update(direction: fresh.direction, glucose: fresh.value, reading: fresh.date, write: self.lastQueued, status: fresh.fresh ? "Nightscout recente; display non confermato" : "Dato obsoleto: invio bloccato")
                     self.lastNightscoutSuccess = Date()
                     UserDefaults.standard.set(self.lastNightscoutSuccess, forKey: "last-nightscout-success")
                     self.recordEvent(fresh.fresh ? "Nightscout: risposta valida" : "Nightscout: risposta obsoleta, non inviata")
@@ -306,7 +306,7 @@ final class BridgeModel: NSObject, ObservableObject, CBCentralManagerDelegate, C
             return
         }
         do {
-            let bytes = try WeatherCodec.build(temperature: approx.celsius)
+            let bytes = try WeatherCodec.build(temperature: approx.celsius, climate: Trend.climate(reading.direction))
             let maxSize = peripheral.maximumWriteValueLength(for: .withoutResponse)
             guard bytes.count <= maxSize else {
                 diagnostic = "MTU insufficiente: \(maxSize) byte disponibili, frame \(bytes.count); nessuna scrittura"
@@ -319,7 +319,7 @@ final class BridgeModel: NSObject, ObservableObject, CBCentralManagerDelegate, C
             peripheral.writeValue(Data(bytes), for: characteristic, type: .withoutResponse)
             lastQueuedReading = reading.timestampMS
             lastQueued = Date()
-            LiveSession.shared.update(glucose: reading.value, reading: reading.date, write: lastQueued, status: "Invio BLE richiesto; display non confermato")
+            LiveSession.shared.update(direction: reading.direction, glucose: reading.value, reading: reading.date, write: lastQueued, status: "Invio BLE richiesto; display non confermato")
             UserDefaults.standard.set(Int(reading.timestampMS), forKey: "last-queued-ms")
             UserDefaults.standard.set(lastQueued, forKey: "last-queued-at")
             diagnostic = "Scrittura BLE richiesta: \(reading.value) mg/dL → \(approx.shownFahrenheit) °F (±\(approx.difference)). Ricezione non confermata."

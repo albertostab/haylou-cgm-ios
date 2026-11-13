@@ -9,7 +9,7 @@ struct BridgeLiveWidget: Widget {
         ActivityConfiguration(for: BridgeActivityAttributes.self) { context in
             VStack(alignment: .leading) {
                 Text("Haylou CGM · sessione sperimentale").font(.headline)
-                Text(context.state.glucose.map { "\($0) mg/dL" } ?? "In attesa di lettura").font(.largeTitle.bold()).privacySensitive()
+                Text(context.state.glucose.map { "\($0) \(Trend.symbol(context.state.direction ?? "")) mg/dL" } ?? "In attesa di lettura").font(.largeTitle.bold()).privacySensitive()
                 Text(context.isStale ? "Sessione da verificare: dati non aggiornati" : context.state.status)
                 if let date = context.state.readingDate {
                     HStack { Text("Età lettura:"); Text(date, style: .relative) }
@@ -20,15 +20,17 @@ struct BridgeLiveWidget: Widget {
             DynamicIsland {
                 DynamicIslandExpandedRegion(.center) {
                     VStack {
-                        Text(context.state.glucose.map { "\($0) mg/dL" } ?? "--").font(.title.bold()).privacySensitive()
+                        Text(context.state.glucose.map { "\($0) \(Trend.symbol(context.state.direction ?? "")) mg/dL" } ?? "--").font(.title.bold()).privacySensitive()
                         Text(context.isStale ? "DATO OBSOLETO" : context.state.status).font(.caption)
                         if let date = context.state.readingDate { Text(date, style: .relative) }
                     }
                 }
                 DynamicIslandExpandedRegion(.bottom) { Text("Display non confermato").font(.caption) }
-            } compactLeading: { Text("RT2") } compactTrailing: {
-                Image(systemName: "antenna.radiowaves.left.and.right")
-            } minimal: { Text("RT2") }
+            } compactLeading: { Text(context.isStale ? "!" : Trend.symbol(context.state.direction ?? "")) } compactTrailing: {
+                Text(context.state.glucose.map(String.init) ?? "--").privacySensitive()
+            } minimal: {
+                Text(context.isStale ? "!" : (context.state.glucose.map(String.init) ?? "--") + Trend.symbol(context.state.direction ?? "")).privacySensitive()
+            }
         }
     }
 }
