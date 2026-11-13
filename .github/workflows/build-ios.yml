@@ -23,7 +23,7 @@ jobs:
           /tmp/haylou-codec-test
       - name: Test sincronizzazione e analisi sintassi Swift
         run: |
-          swiftc HaylouCGM/SyncPolicy.swift Tests/SyncPolicyTest.swift -o /tmp/sync-test
+          swiftc HaylouCGM/SyncPolicy.swift Shared/Trend.swift Tests/SyncPolicyTest.swift -o /tmp/sync-test
           /tmp/sync-test
           xcrun swiftc -frontend -parse HaylouCGM/*.swift Shared/*.swift
           xcrun swiftc -frontend -parse HaylouLiveActivity/*.swift Shared/*.swift
