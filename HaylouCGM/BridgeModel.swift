@@ -49,6 +49,12 @@ final class BridgeModel: NSObject, ObservableObject, CBCentralManagerDelegate, C
     private var writeCharacteristic: CBCharacteristic?
     private var timer: Timer?
     private var inFlight = false
+    private var requestGeneration = UUID()
+    private var requestStarted: Date?
+    private var requestCompletions: [(Bool) -> Void] = []
+    private var discovering = false
+    private var readyHandled = false
+    private var subscriptions = Set<CBUUID>()
     private var reconnectAttempt = 0
     private var retryWork: DispatchWorkItem?
     private var requestTask: URLSessionDataTask?
@@ -71,8 +77,29 @@ final class BridgeModel: NSObject, ObservableObject, CBCentralManagerDelegate, C
         "Haylou CGM diagnostics; display never confirmed; age of last queued reading: \(lastQueuedReading > 0 ? String(Int(Date().timeIntervalSince1970 - Double(lastQueuedReading) / 1000)) : "unknown") seconds\n" + eventLog.reversed().joined(separator: "\n")
     }
     func cancelRefresh() {
-        requestTask?.cancel()
+        requestGeneration = UUID()
+        requestTask?.cancel(); requestTask = nil; inFlight = false; requestStarted = nil
+        let callbacks = requestCompletions; requestCompletions = []
+        callbacks.forEach { $0(false) }
         recordEvent("BG task expired: network cancellation requested")
+    }
+    private func finishRefresh(_ success: Bool) {
+        inFlight = false; requestStarted = nil; requestTask = nil
+        let callbacks = requestCompletions; requestCompletions = []
+        callbacks.forEach { $0(success) }
+    }
+    private func discoverOnce(_ peripheral: CBPeripheral) {
+        guard peripheral.identifier == activePeripheral?.identifier,
+              peripheral.state == .connected, !discovering, !readyHandled else { return }
+        discovering = true
+        peripheral.discoverServices([CBUUID(string: WeatherCodec.serviceUUID)])
+    }
+    private func resetGATT() {
+        discovering = false; readyHandled = false; subscriptions.removeAll(); writeCharacteristic = nil
+    }
+    func startLiveActivity() {
+        guard UIApplication.shared.applicationState == .active else { return }
+        LiveSession.shared.start(log: recordEvent)
     }
     private func retryConnection() {
         guard automatic, central.state == .poweredOn, retryWork == nil else { return }
@@ -130,10 +157,12 @@ final class BridgeModel: NSObject, ObservableObject, CBCentralManagerDelegate, C
         if enabled {
             diagnostic = "Sessione abilitata; iOS può sospendere il polling a schermo bloccato"
             recordEvent("Invio automatico attivato")
+            startLiveActivity()
             restoreKnownDevice()
             refreshNow(reason: "automatic enabled")
             AppDelegate.scheduleBackgroundRefresh()
         } else {
+            LiveSession.shared.stop(log: recordEvent)
             retryWork?.cancel(); retryWork = nil
             BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: Self.refreshID)
             diagnostic = "Invio automatico disattivato. Il watch potrebbe mostrare l'ultimo valore."
@@ -146,8 +175,8 @@ final class BridgeModel: NSObject, ObservableObject, CBCentralManagerDelegate, C
         timer = nil
         guard automatic else { return }
         let newTimer = Timer(timeInterval: 60, repeats: true) { [weak self] _ in
-            guard let self = self, self.appInForeground else { return }
-            self.refreshNow(reason: "foreground timer")
+            guard let self = self, self.appInForeground || LiveSession.shared.isActive else { return }
+            self.refreshNow(reason: self.appInForeground ? "foreground timer" : "Live Activity runtime opportunity (not guaranteed)")
         }
         RunLoop.main.add(newTimer, forMode: .common)
         timer = newTimer
@@ -158,7 +187,7 @@ final class BridgeModel: NSObject, ObservableObject, CBCentralManagerDelegate, C
         if foreground {
             diagnostic = "In primo piano: controllo immediato Nightscout"
             recordEvent("App in primo piano")
-            if automatic { restoreKnownDevice(); refreshNow(reason: "foreground") }
+            if automatic { startLiveActivity(); restoreKnownDevice(); refreshNow(reason: "foreground") }
         } else {
             diagnostic = "In background: aggiornamenti solo se iOS concede esecuzione"
             recordEvent("App in background o schermo bloccato")
@@ -168,10 +197,17 @@ final class BridgeModel: NSObject, ObservableObject, CBCentralManagerDelegate, C
 
     /// Chiamato anche da BGAppRefreshTask quando iOS decide di concederlo.
     func refreshNow(reason: String = "manuale/timer", completion: @escaping (Bool) -> Void = { _ in }) {
+        if inFlight, Date().timeIntervalSince(requestStarted ?? .distantPast) > 30 {
+            recordEvent("Nightscout abandoned request replaced after elapsed deadline")
+            cancelRefresh()
+        }
+        guard !inFlight else {
+            requestCompletions.append(completion)
+            recordEvent("Nightscout trigger joined active request: \(reason)"); return
+        }
         lastNightscoutCheck = Date()
         UserDefaults.standard.set(lastNightscoutCheck, forKey: "last-nightscout-check")
         recordEvent("Nightscout: controllo (\(reason))")
-        guard !inFlight else { recordEvent("Nightscout: coalesced with in-flight request"); completion(false); return }
         guard let base = URL(string: nightscoutURL), base.scheme == "https", base.host != nil,
               base.user == nil, base.password == nil,
               base.query == nil, base.fragment == nil else {
@@ -179,12 +215,15 @@ final class BridgeModel: NSObject, ObservableObject, CBCentralManagerDelegate, C
             completion(false); return
         }
         inFlight = true
+        requestStarted = Date(); requestGeneration = UUID()
+        let generation = requestGeneration
+        requestCompletions.append(completion)
         var components = URLComponents(url: base.appendingPathComponent("api/v1/entries/sgv.json"), resolvingAgainstBaseURL: false)
         var items = [URLQueryItem(name: "count", value: "3")]
         if !token.isEmpty { items.append(URLQueryItem(name: "token", value: token)) }
         components?.queryItems = items
         guard let apiURL = components?.url else {
-            inFlight = false; completion(false); return
+            finishRefresh(false); return
         }
         var request = URLRequest(url: apiURL, cachePolicy: .reloadIgnoringLocalCacheData,
                                  timeoutInterval: UIApplication.shared.applicationState == .active ? 25 : 8)
@@ -192,18 +231,18 @@ final class BridgeModel: NSObject, ObservableObject, CBCentralManagerDelegate, C
         // Non stampare mai request.url: contiene il token nell'eventuale query.
         requestTask = URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
             DispatchQueue.main.async {
-                guard let self = self else { completion(false); return }
-                self.inFlight = false
+                guard let self = self else { return }
+                guard generation == self.requestGeneration else { return }
                 if let error = error {
                     self.nightscoutStatus = "Connessione Nightscout fallita: \((error as NSError).code)"
                     self.recordEvent("Nightscout transport error code \((error as NSError).code); retry at next trigger")
-                    completion(false); return
+                    self.finishRefresh(false); return
                 }
                 guard let http = response as? HTTPURLResponse, http.statusCode == 200, let data = data else {
                     let status = (response as? HTTPURLResponse)?.statusCode ?? 0
                     self.nightscoutStatus = "Nightscout HTTP \(status)"
                     self.recordEvent("Nightscout HTTP \(status)")
-                    completion(false); return
+                    self.finishRefresh(false); return
                 }
                 do {
                     let items = try JSONDecoder().decode([NightscoutEntry].self, from: data)
@@ -215,19 +254,20 @@ final class BridgeModel: NSObject, ObservableObject, CBCentralManagerDelegate, C
                     }.sorted { $0.timestampMS > $1.timestampMS }
                     guard let fresh = readings.first else {
                         self.nightscoutStatus = "Nessuna lettura CGM valida"
-                        completion(false); return
+                        self.finishRefresh(false); return
                     }
                     self.recordEvent("CGM timestamp=\(fresh.timestampMS); age=\(Int(fresh.ageSeconds))s")
                     self.latest = fresh
+                    LiveSession.shared.update(reading: fresh.date, write: self.lastQueued, status: fresh.fresh ? "Nightscout recente; display non confermato" : "Dato obsoleto: invio bloccato")
                     self.lastNightscoutSuccess = Date()
                     UserDefaults.standard.set(self.lastNightscoutSuccess, forKey: "last-nightscout-success")
                     self.recordEvent(fresh.fresh ? "Nightscout: risposta valida" : "Nightscout: risposta obsoleta, non inviata")
                     self.nightscoutStatus = fresh.fresh ? "Lettura ricevuta da Nightscout" : "Lettura vecchia: invio bloccato"
                     if self.automatic { self.sendIfNew(fresh) }
-                    completion(true)
+                    self.finishRefresh(true)
                 } catch {
                     self.nightscoutStatus = "Risposta Nightscout non decodificabile"
-                    completion(false)
+                    self.finishRefresh(false)
                 }
             }
         }
@@ -254,7 +294,7 @@ final class BridgeModel: NSObject, ObservableObject, CBCentralManagerDelegate, C
         bluetoothStatus = "Connessione a \(peripheral.name ?? "RT2")..."
         guard peripheral.state != .connecting else { return }
         if peripheral.state == .connected {
-            peripheral.discoverServices([CBUUID(string: WeatherCodec.serviceUUID)]); return
+            discoverOnce(peripheral); return
         }
         writeCharacteristic = nil
         recordEvent("BLE connection requested for authorized peripheral")
@@ -291,6 +331,7 @@ final class BridgeModel: NSObject, ObservableObject, CBCentralManagerDelegate, C
             peripheral.writeValue(Data(bytes), for: characteristic, type: .withoutResponse)
             lastQueuedReading = reading.timestampMS
             lastQueued = Date()
+            LiveSession.shared.update(reading: reading.date, write: lastQueued, status: "Invio BLE richiesto; display non confermato")
             UserDefaults.standard.set(Int(reading.timestampMS), forKey: "last-queued-ms")
             UserDefaults.standard.set(lastQueued, forKey: "last-queued-at")
             diagnostic = "Scrittura BLE richiesta: \(reading.value) mg/dL → \(approx.shownFahrenheit) °F (±\(approx.difference)). Ricezione non confermata."
@@ -306,7 +347,7 @@ final class BridgeModel: NSObject, ObservableObject, CBCentralManagerDelegate, C
             bluetoothStatus = "Bluetooth acceso"
             if automatic { restoreKnownDevice() }
         } else {
-            writeCharacteristic = nil
+            resetGATT()
             bluetoothStatus = "Bluetooth non disponibile (stato \(central.state.rawValue))"
         }
     }
@@ -319,7 +360,7 @@ final class BridgeModel: NSObject, ObservableObject, CBCentralManagerDelegate, C
             bluetoothStatus = "Connessione BLE recuperata dal sistema"
             if automatic, device.state == .disconnected { retryConnection() }
             if device.state == .connected {
-                device.discoverServices([CBUUID(string: WeatherCodec.serviceUUID)])
+                discoverOnce(device)
             }
         }
     }
@@ -333,12 +374,12 @@ final class BridgeModel: NSObject, ObservableObject, CBCentralManagerDelegate, C
     }
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
         retryWork?.cancel(); retryWork = nil
-        writeCharacteristic = nil
+        resetGATT()
         activePeripheral = peripheral
         peripheral.delegate = self
         bluetoothStatus = "Connesso, identifico servizi..."
         recordEvent("Core Bluetooth: connessione stabilita")
-        peripheral.discoverServices([CBUUID(string: WeatherCodec.serviceUUID)])
+        discoverOnce(peripheral)
     }
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
         bluetoothStatus = "Connessione non riuscita"
@@ -346,13 +387,14 @@ final class BridgeModel: NSObject, ObservableObject, CBCentralManagerDelegate, C
     }
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral,
                         error: Error?) {
-        writeCharacteristic = nil
+        resetGATT()
         bluetoothStatus = "Disconnesso: \(error?.localizedDescription ?? "nessun errore")"
         diagnostic = "Nessun nuovo invio: il quadrante può mostrare una glicemia obsoleta"
         recordEvent("Core Bluetooth: periferica disconnessa")
         retryConnection()
     }
     func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
+        guard discovering, peripheral.identifier == activePeripheral?.identifier else { return }
         guard error == nil, let service = peripheral.services?.first(where: {
             $0.uuid == CBUUID(string: WeatherCodec.serviceUUID)
         }) else {
@@ -365,14 +407,16 @@ final class BridgeModel: NSObject, ObservableObject, CBCentralManagerDelegate, C
                                             CBUUID(string: WeatherCodec.indicateUUID)], for: service)
     }
     func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: Error?) {
+        guard discovering, !readyHandled, peripheral.identifier == activePeripheral?.identifier else { return }
         guard error == nil else { bluetoothStatus = "Errore GATT"; central.cancelPeripheralConnection(peripheral); retryConnection(); return }
         for ch in service.characteristics ?? [] {
             if ch.uuid == CBUUID(string: WeatherCodec.writeUUID) { writeCharacteristic = ch }
             if ch.uuid == CBUUID(string: WeatherCodec.notifyUUID) || ch.uuid == CBUUID(string: WeatherCodec.indicateUUID) {
-                if ch.properties.contains(.notify) || ch.properties.contains(.indicate) { peripheral.setNotifyValue(true, for: ch) }
+                if (ch.properties.contains(.notify) || ch.properties.contains(.indicate)), !ch.isNotifying, subscriptions.insert(ch.uuid).inserted { peripheral.setNotifyValue(true, for: ch) }
             }
         }
         if writeCharacteristic != nil {
+            readyHandled = true; discovering = false
             reconnectAttempt = 0
             bluetoothStatus = "Haylou RT2 pronto"
             recordEvent("Core Bluetooth: caratteristica meteo pronta")

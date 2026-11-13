@@ -25,7 +25,8 @@ jobs:
         run: |
           swiftc HaylouCGM/SyncPolicy.swift Tests/SyncPolicyTest.swift -o /tmp/sync-test
           /tmp/sync-test
-          xcrun swiftc -frontend -parse HaylouCGM/*.swift
+          xcrun swiftc -frontend -parse HaylouCGM/*.swift Shared/*.swift
+          xcrun swiftc -frontend -parse HaylouLiveActivity/*.swift Shared/*.swift
           git diff --exit-code a50d767 -- HaylouCGM/WeatherCodec.swift
       - name: Genera progetto Xcode
         run: xcodegen generate

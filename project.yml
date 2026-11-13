@@ -16,6 +16,9 @@ targets:
       - path: HaylouCGM
         excludes:
           - Info.plist
+      - path: Shared
+    dependencies:
+      - target: HaylouLiveActivity
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: it.albertostabile.HaylouCGM
@@ -24,3 +27,21 @@ targets:
         SWIFT_EMIT_LOC_STRINGS: "YES"
     scheme:
       testTargets: []
+
+  HaylouLiveActivity:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: HaylouLiveActivity
+      - path: Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: it.albertostabile.HaylouCGM.LiveActivity
+        GENERATE_INFOPLIST_FILE: "YES"
+        INFOPLIST_KEY_NSExtension_NSExtensionPointIdentifier: com.apple.widgetkit-extension
+        SKIP_INSTALL: "YES"
+    info:
+      path: build/LiveActivity-Info.plist
+      properties:
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension

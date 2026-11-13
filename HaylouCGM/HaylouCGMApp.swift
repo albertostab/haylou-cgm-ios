@@ -117,6 +117,9 @@ struct BridgeView: View {
                             Toggle("Invia automaticamente nuove letture", isOn: Binding(
                                 get: { bridge.automatic }, set: { bridge.setAutomatic($0) }
                             ))
+                            Button("Avvia / recupera Live Activity") { bridge.startLiveActivity() }
+                                .buttonStyle(.bordered)
+                            Text("Live Activity sperimentale: nessuna garanzia a schermo spento. Non mostra la glicemia sulla schermata di blocco.").font(.caption)
                             Text("Polling 60 secondi quando l'app è attiva. In background, iOS decide quando eseguire controlli: nessuna frequenza garantita.")
                                 .font(.caption).foregroundStyle(.secondary)
                             Text("Il valore sull'orologio è in °F e NON rappresenta una glicemia medica affidabile. Può rimanere vecchio quando l'app è sospesa. Non sostituisce il FreeStyle Libre né gli allarmi.")

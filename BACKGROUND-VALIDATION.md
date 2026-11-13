@@ -23,3 +23,11 @@ Build/unit success cannot substitute for this physical test. User previously rep
 - https://developer.apple.com/documentation/backgroundtasks/bgtaskrequest/earliestbegindate
 - https://developer.apple.com/documentation/technotes/tn3115-bluetooth-state-restoration-app-relaunch-rules
 - https://developer.apple.com/documentation/uikit/using-background-tasks-to-update-your-app
+
+
+## v0.3 Live Activity experiment
+Adds an embedded WidgetKit extension and local ActivityKit session, started explicitly while foregrounded (or when automatic mode is enabled/resumed). No APNs tokens or server required. Shows session state and reading age, not glucose value. Stops with automatic mode off; system/user may end it independently. A 60-second timer attempts a check only while foregrounded or an Activity is active AND iOS actually allows execution. It does not awaken a suspended process. No claim of stable execution on iOS 27.2 or with screen off. Compare physical 30-minute runs with/without the Activity; export logs after each.
+
+GATT discovery is gated per connection and subscriptions are issued once; reset on disconnect/power loss. Network requests carry generation identifiers: expired requests are cancelled, callbacks cannot overwrite replacement requests, and concurrent triggers share completion. A request older than 30 seconds is replaced at the next opportunity. Obsolete Nightscout responses still never reach the watch.
+
+Windows installation: Sideloadly must retain and sign the embedded LiveActivity.appex. If the Activity button fails, export logs and verify the extension was not stripped by the signing tool. Free signing/device compatibility is a separate physical installation check.
