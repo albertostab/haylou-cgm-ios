@@ -4,6 +4,8 @@ options:
   createIntermediateGroups: true
 settings:
   base:
+    CURRENT_PROJECT_VERSION: "3"
+    MARKETING_VERSION: "0.3.0"
     SWIFT_VERSION: "5.0"
     IPHONEOS_DEPLOYMENT_TARGET: "17.0"
     TARGETED_DEVICE_FAMILY: "1"
