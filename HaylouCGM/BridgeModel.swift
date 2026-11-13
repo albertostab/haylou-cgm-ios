@@ -274,6 +274,7 @@ final class BridgeModel: NSObject, ObservableObject, CBCentralManagerDelegate, C
         guard SyncPolicy.shouldSend(timestamp: reading.timestampMS, previous: lastQueuedReading, now: Date()) else { return }
         guard isConnected, let peripheral = activePeripheral, let characteristic = writeCharacteristic else {
             diagnostic = "RT2 non connesso; nuova lettura non trasmessa"
+            recordEvent("BLE deferred: disconnected; latest reading retained")
             return
         }
         do {
@@ -401,15 +402,15 @@ final class BridgeModel: NSObject, ObservableObject, CBCentralManagerDelegate, C
 
         // Soltanto notifiche spontanee dal watch possono risvegliare un central sospeso.
         // Senza eventi l'iPhone non garantisce polling periodico; non forzare timer falsi.
-        guard automatic, UIApplication.shared.applicationState != .active, isConnected, !inFlight else { return }
+        guard automatic, isConnected, !inFlight else { return }
         let now = Date()
         guard now.timeIntervalSince(lastBLETriggeredCheck ?? .distantPast) >= 60,
               now.timeIntervalSince(lastNightscoutCheck ?? .distantPast) >= 55 else { return }
         lastBLETriggeredCheck = now
-        backgroundBLEWakeCount += 1
+        if UIApplication.shared.applicationState != .active { backgroundBLEWakeCount += 1 }
         UserDefaults.standard.set(backgroundBLEWakeCount, forKey: "background-ble-wake-count")
         recordEvent("Risveglio BLE in background: controllo Nightscout")
-        refreshNow(reason: "notifica BLE background")
+        refreshNow(reason: "notifica BLE (foreground/background state in preceding event)")
     }
     func peripheralIsReady(toSendWriteWithoutResponse peripheral: CBPeripheral) {
         if automatic, let pending = latest { sendIfNew(pending) }

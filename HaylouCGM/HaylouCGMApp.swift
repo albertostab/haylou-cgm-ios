@@ -10,7 +10,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         catch { BridgeModel.shared.recordEvent("BG scheduling failed code=\((error as NSError).code)") }
     }
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
-        BGTaskScheduler.shared.register(forTaskWithIdentifier: BridgeModel.refreshID, using: nil) { task in
+        BGTaskScheduler.shared.register(forTaskWithIdentifier: BridgeModel.refreshID, using: .main) { task in
             guard let task = task as? BGAppRefreshTask else { return }
             let bridge = BridgeModel.shared
             guard bridge.automatic else { task.setTaskCompleted(success: true); return }
@@ -21,6 +21,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
                 DispatchQueue.main.async {
                     guard !completed else { return }
                     completed = true
+                    bridge.recordEvent("BGAppRefreshTask completed success=\(success)")
                     task.setTaskCompleted(success: success)
                 }
             }
