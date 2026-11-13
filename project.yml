@@ -1,0 +1,26 @@
+name: HaylouCGM
+options:
+  bundleIdPrefix: it.albertostabile
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    IPHONEOS_DEPLOYMENT_TARGET: "17.0"
+    TARGETED_DEVICE_FAMILY: "1"
+    SUPPORTS_MACCATALYST: "NO"
+targets:
+  HaylouCGM:
+    type: application
+    platform: iOS
+    sources:
+      - path: HaylouCGM
+        excludes:
+          - Info.plist
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: it.albertostabile.HaylouCGM
+        INFOPLIST_FILE: HaylouCGM/Info.plist
+        GENERATE_INFOPLIST_FILE: "NO"
+        SWIFT_EMIT_LOC_STRINGS: "YES"
+    scheme:
+      testTargets: []

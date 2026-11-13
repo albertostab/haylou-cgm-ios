@@ -1,0 +1,43 @@
+name: Compila Haylou CGM IPA (senza Mac personale)
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - name: Scarica codice
+        uses: actions/checkout@v4
+      - name: Configura XcodeGen
+        run: brew install xcodegen
+      - name: Test offline encoder (frame RT2 già provato)
+        run: |
+          swiftc HaylouCGM/WeatherCodec.swift Tests/CodecSelfTest.swift -o /tmp/haylou-codec-test
+          /tmp/haylou-codec-test
+      - name: Genera progetto Xcode
+        run: xcodegen generate
+      - name: Mostra versione Xcode
+        run: xcodebuild -version
+      - name: Compila app per iPhone SENZA FIRMA
+        run: |
+          set -o pipefail
+          xcodebuild -project HaylouCGM.xcodeproj -scheme HaylouCGM \
+            -configuration Release -destination 'generic/platform=iOS' \
+            -sdk iphoneos -derivedDataPath "$PWD/build" \
+            CODE_SIGNING_ALLOWED=NO build
+      - name: Prepara IPA unsigned (la firma avviene su Windows)
+        run: |
+          mkdir -p package/Payload
+          cp -R "build/Build/Products/Release-iphoneos/HaylouCGM.app" package/Payload/
+          cd package
+          zip -qry ../HaylouCGM-unsigned.ipa Payload
+      - name: Scarica IPA dagli artifacts di Actions
+        uses: actions/upload-artifact@v4
+        with:
+          name: HaylouCGM-unsigned-IPA
+          path: HaylouCGM-unsigned.ipa
+          retention-days: 7
