@@ -2,6 +2,7 @@ name: Compila Haylou CGM IPA (senza Mac personale)
 on:
   push:
     branches: [main]
+  pull_request:
   workflow_dispatch:
 permissions:
   contents: read
@@ -12,12 +13,20 @@ jobs:
     steps:
       - name: Scarica codice
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Configura XcodeGen
         run: brew install xcodegen
       - name: Test offline encoder (frame RT2 già provato)
         run: |
           swiftc HaylouCGM/WeatherCodec.swift Tests/CodecSelfTest.swift -o /tmp/haylou-codec-test
           /tmp/haylou-codec-test
+      - name: Test sincronizzazione e analisi sintassi Swift
+        run: |
+          swiftc HaylouCGM/SyncPolicy.swift Tests/SyncPolicyTest.swift -o /tmp/sync-test
+          /tmp/sync-test
+          xcrun swiftc -frontend -parse HaylouCGM/*.swift
+          git diff --exit-code a50d767 -- HaylouCGM/WeatherCodec.swift
       - name: Genera progetto Xcode
         run: xcodegen generate
       - name: Mostra versione Xcode

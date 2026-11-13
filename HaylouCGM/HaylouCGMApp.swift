@@ -5,15 +5,17 @@ import UIKit
 final class AppDelegate: NSObject, UIApplicationDelegate {
     static func scheduleBackgroundRefresh() {
         let request = BGAppRefreshTaskRequest(identifier: BridgeModel.refreshID)
-        request.earliestBeginDate = Date(timeIntervalSinceNow: 15 * 60)
-        try? BGTaskScheduler.shared.submit(request)
+        request.earliestBeginDate = Date(timeIntervalSinceNow: 60)
+        do { try BGTaskScheduler.shared.submit(request) }
+        catch { BridgeModel.shared.recordEvent("BG scheduling failed code=\((error as NSError).code)") }
     }
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         BGTaskScheduler.shared.register(forTaskWithIdentifier: BridgeModel.refreshID, using: nil) { task in
             guard let task = task as? BGAppRefreshTask else { return }
-            Self.scheduleBackgroundRefresh()
             let bridge = BridgeModel.shared
             guard bridge.automatic else { task.setTaskCompleted(success: true); return }
+            bridge.recordEvent("BGAppRefreshTask granted by iOS")
+            Self.scheduleBackgroundRefresh()
             var completed = false
             func finishOnce(_ success: Bool) {
                 DispatchQueue.main.async {
@@ -22,7 +24,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
                     task.setTaskCompleted(success: success)
                 }
             }
-            task.expirationHandler = { finishOnce(false) }
+            task.expirationHandler = { DispatchQueue.main.async { bridge.cancelRefresh(); finishOnce(false) } }
             bridge.refreshNow(reason: "BGAppRefreshTask") { success in finishOnce(success) }
         }
         if BridgeModel.shared.automatic { Self.scheduleBackgroundRefresh() }
@@ -134,6 +136,7 @@ struct BridgeView: View {
                                 .foregroundStyle(.orange)
                         }.font(.caption).frame(maxWidth: .infinity, alignment: .leading)
                     }
+                    ShareLink("Esporta registro diagnostico", item: bridge.diagnosticExport)
                     GroupBox("5 · Eventi background (ultimi 15)") {
                         VStack(alignment: .leading, spacing: 5) {
                             if bridge.eventLog.isEmpty {
