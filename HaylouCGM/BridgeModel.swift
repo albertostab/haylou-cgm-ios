@@ -210,7 +210,9 @@ final class BridgeModel: NSObject, ObservableObject, CBCentralManagerDelegate, C
         let generation = requestGeneration
         requestCompletions.append(completion)
         var components = URLComponents(url: base.appendingPathComponent("api/v1/entries/sgv.json"), resolvingAgainstBaseURL: false)
-        var items = [URLQueryItem(name: "count", value: "40")]
+        let historyStart = Int64(Date().addingTimeInterval(-6 * 3600).timeIntervalSince1970 * 1000)
+        var items = [URLQueryItem(name: "count", value: "10000"),
+                     URLQueryItem(name: "find[date][$gte]", value: String(historyStart))]
         if !token.isEmpty { items.append(URLQueryItem(name: "token", value: token)) }
         components?.queryItems = items
         guard let apiURL = components?.url else {
@@ -248,7 +250,9 @@ final class BridgeModel: NSObject, ObservableObject, CBCentralManagerDelegate, C
                         self.finishRefresh(false); return
                     }
                     self.recordEvent("CGM timestamp=\(fresh.timestampMS); age=\(Int(fresh.ageSeconds))s")
-                    self.activityHistory = readings.reversed().map { GlucosePoint(date: $0.date, value: $0.value) }
+                    let history = readings.reversed().filter { $0.timestampMS >= historyStart && $0.ageSeconds >= 0 }
+                    self.activityHistory = history.map { GlucosePoint(date: $0.date, value: $0.value) }
+                    self.recordEvent("Nightscout 6h history: \(history.count) readings")
                     self.latest = fresh
                     LiveSession.shared.update(history: self.activityHistory, direction: fresh.direction, glucose: fresh.value, reading: fresh.date, write: self.lastQueued, status: fresh.fresh ? "Nightscout recente; display non confermato" : "Dato obsoleto: invio bloccato")
                     self.lastNightscoutSuccess = Date()

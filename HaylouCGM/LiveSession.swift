@@ -20,7 +20,7 @@ final class LiveSession {
     }
     func update(history: [GlucosePoint], direction: String, glucose: Int?, reading: Date?, write: Date?, status: String) {
         guard let activity = activity ?? Activity<BridgeActivityAttributes>.activities.first else { return }
-        let state = BridgeActivityAttributes.ContentState(history: Array(history.suffix(40)), direction: direction, glucose: glucose, readingDate: reading, writeDate: write, status: status)
+        let state = BridgeActivityAttributes.ContentState(history: HistoryWindow.summarize(history, now: Date()), direction: direction, glucose: glucose, readingDate: reading, writeDate: write, status: status)
         Task { await activity.update(ActivityContent(state: state,
             staleDate: reading?.addingTimeInterval(720) ?? Date().addingTimeInterval(60))) }
     }
