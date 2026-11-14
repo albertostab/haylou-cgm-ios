@@ -1,11 +1,20 @@
-# Haylou CGM · prototipo quadrante RT2 (LS10)
+# Haylou CGM · prototipi quadrante RT2 (LS10)
+
+## Nuovo progetto RT2 Retro
+
+È ora disponibile [RT2-Retro/README.md](RT2-Retro/README.md), basato sul riferimento
+fornito dall'utente: progetto TBWF riproducibile e campi nativi dinamici. Contiene anche una
+**prova da importare nell'editor** per frecce personalizzate e indicatore dei
+secondi: il supporto del compilatore e la resa fisica non sono verificati.
+Nessun quadrante è stato installato sul watch durante questa preparazione.
+I PNG descritti sotto restano i precedenti sfondi statici.
 
 ## Stato verificato
 
 - Il modello **Haylou RT2 LS10** è pubblicizzato con schermo **360×360 px** (vedere scheda RT2 haylou.info e manuale LS10); il background allegato ha questa dimensione. Ho incluso un'alternativa 240×240 solo per eventuali interfacce che richiedano quella risoluzione.
 - Hello Haylou documenta supporto ai quadranti `.tbwf` per RT2 LS10 e offre **editor e upload su Android**. Non è un editor iOS.
 - Haylou Fun ufficiale su iOS documenta il quadrante personalizzato tramite **foto/immagine**, che è una prima prova possibile direttamente dal tuo iPhone.
-- **Nessun file `.tbwf` è stato generato né caricato sul RT2** in questa versione: i PNG sono fondi grafici da usare nel custom dial ufficiale. Il PNG non trasmette dati glicemici e non cambia da solo con Nightscout.
+- **Gli originali PNG qui descritti sono solo sfondi**. Il nuovo progetto `.tbwf` è nella cartella RT2-Retro; nessun upload fisico è ancora verificato. Il PNG non trasmette dati glicemici e non cambia da solo con Nightscout.
 - I campi meteo del firmware e la home watchface sono due superfici diverse. I quadranti `.tbwf` documentati NON offrono il caricamento libero di icone meteo come i vecchi `.bin`; non promettere che sostituire l'icona comporti la comparsa della glicemia sulla home.
 
 ## Prova prudente con iPhone (senza Android)

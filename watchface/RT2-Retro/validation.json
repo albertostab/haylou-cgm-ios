@@ -1,0 +1,34 @@
+[
+  {
+    "file": "RT2-Retro.tbwf",
+    "bytes": 325883,
+    "sha256": "47e11c47f882db98ae90c219a1f6a0df86dafc6f11ab1be3b241a41edc8385b5",
+    "zip_json_png_fonts": "passed",
+    "editor_import": "NOT TESTED",
+    "watch_upload": "NOT PERFORMED",
+    "weather_on_home": "UNVERIFIED",
+    "arrows": "not enabled",
+    "native_second_hand": "not enabled",
+    "native_month": "numeric; NOV in the design preview only",
+    "native_steps": "ungrouped; 8.542 in the design preview only",
+    "rings": "decorative, not live progress or heart-rate thresholds",
+    "out_of_range_red": "NOT IMPLEMENTED on watch; native text colour is static",
+    "data_source": "existing approximate weather temperature; no protocol changes"
+  },
+  {
+    "file": "RT2-Retro-Arrows-EDITOR-PROBE.tbwf",
+    "bytes": 333141,
+    "sha256": "c6628718655ca42c1f86ce7e1aa9cb38dac58c1d96bec74906ef4f868e91b7c7",
+    "zip_json_png_fonts": "passed",
+    "editor_import": "NOT TESTED",
+    "watch_upload": "NOT PERFORMED",
+    "weather_on_home": "UNVERIFIED",
+    "arrows": "EDITOR PROBE, UNVERIFIED",
+    "native_second_hand": "EDITOR PROBE, UNVERIFIED",
+    "native_month": "numeric; NOV in the design preview only",
+    "native_steps": "ungrouped; 8.542 in the design preview only",
+    "rings": "decorative, not live progress or heart-rate thresholds",
+    "out_of_range_red": "NOT IMPLEMENTED on watch; native text colour is static",
+    "data_source": "existing approximate weather temperature; no protocol changes"
+  }
+]
