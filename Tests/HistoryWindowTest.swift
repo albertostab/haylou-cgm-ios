@@ -12,6 +12,12 @@ import Foundation
         precondition(!output.contains { $0.value == 500 })
         let payload = try JSONEncoder().encode(output)
         precondition(payload.count < 3500)
+        let day = (0..<1440).map { GlucosePoint(date: now.addingTimeInterval(Double(-$0*60)), value: $0 % 2 == 0 ? 55 : 250) }
+        let packed = HistoryWindow.pack(day, now: now)
+        precondition(packed.count <= 480)
+        let encoded = try JSONEncoder().encode(packed)
+        precondition(encoded.count < 3500)
+        precondition(HistoryWindow.unpack(packed, anchor: now).count == packed.count / 2)
         print("PASS: six-hour envelope, extremes retained, ActivityKit payload bounded")
     }
 }

@@ -2,7 +2,9 @@ import ActivityKit
 import Foundation
 struct BridgeActivityAttributes: ActivityAttributes {
     struct ContentState: Codable, Hashable {
-        var history: [GlucosePoint]?
+        var packedHistory: [Int]?
+        var historyAnchor: Date?
+        var selectedHours: Int?
         var direction: String?
         var glucose: Int?
         var readingDate: Date?

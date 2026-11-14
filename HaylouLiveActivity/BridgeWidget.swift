@@ -1,17 +1,19 @@
 import ActivityKit
 import WidgetKit
 import SwiftUI
+import AppIntents
 @main struct BridgeWidgets: WidgetBundle {
     var body: some Widget { BridgeLiveWidget() }
 }
 struct GlucoseSparkline: View {
     let points: [GlucosePoint]
+    var hours: Int = 6
     var body: some View {
         Canvas { context, size in
             guard points.count > 1 else { return }
             let end = Date()
-            let start = end.addingTimeInterval(-21600)
-            let duration = 21600.0
+            let start = end.addingTimeInterval(-Double(hours * 3600))
+            let duration = Double(hours * 3600)
             let low = Double(min(60, points.map(\.value).min() ?? 60)) - 10
             let high = Double(max(190, points.map(\.value).max() ?? 190)) + 10
             func position(_ point: GlucosePoint) -> CGPoint {
@@ -24,6 +26,7 @@ struct GlucoseSparkline: View {
                 context.stroke(path, with: .color(.gray.opacity(0.4)), style: StrokeStyle(lineWidth: 0.5, dash: [3,3]))
             }
             for i in 1..<points.count {
+                guard points[i-1].date >= start, points[i].date <= end else { continue }
                 let a = points[i-1], b = points[i]
                 guard b.date.timeIntervalSince(a.date) <= 900 else { continue }
                 var path = Path(); path.move(to: position(a)); path.addLine(to: position(b))
@@ -52,8 +55,20 @@ struct BridgeLiveWidget: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: BridgeActivityAttributes.self) { context in
             HStack(spacing: 12) {
-                GlucoseSparkline(points: context.state.history ?? []).frame(height: 44)
-                    .opacity(context.isStale ? 0.4 : 1)
+                VStack(alignment: .leading, spacing: 3) {
+                    GlucoseSparkline(points: HistoryWindow.unpack(context.state.packedHistory ?? [], anchor: context.state.historyAnchor ?? Date()), hours: context.state.selectedHours ?? 6)
+                        .frame(height: 38).opacity(context.isStale ? 0.4 : 1)
+                    HStack(spacing: 8) {
+                        ForEach([24,6,3], id: \.self) { hours in
+                            Button(intent: GraphWindowIntent(hours: hours)) {
+                                Text("\(hours)h").font(.system(size: 10, weight: .semibold))
+                                    .foregroundStyle((context.state.selectedHours ?? 6) == hours ? Color.white : Color.gray)
+                                    .padding(.horizontal, 5).padding(.vertical, 3)
+                                    .background(.white.opacity((context.state.selectedHours ?? 6) == hours ? 0.18 : 0.05), in: Capsule())
+                            }.buttonStyle(.plain).accessibilityLabel("Grafico \(hours) ore")
+                        }
+                    }
+                }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(value(context.state, stale: context.isStale))
                         .font(.system(size: 32, weight: .semibold, design: .rounded))
