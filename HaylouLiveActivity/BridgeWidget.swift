@@ -9,7 +9,7 @@ struct BridgeLiveWidget: Widget {
         ActivityConfiguration(for: BridgeActivityAttributes.self) { context in
             VStack(alignment: .leading) {
                 Text("Haylou CGM · sessione sperimentale").font(.headline)
-                Text(context.state.glucose.map { "\($0) \(Trend.symbol(context.state.direction ?? "")) mg/dL" } ?? "In attesa di lettura").font(.largeTitle.bold()).privacySensitive()
+                Text(context.state.glucose.map { "\($0) \(Trend.symbol(context.state.direction ?? "")) mg/dL" } ?? "In attesa di lettura").font(.largeTitle.bold()).foregroundStyle(glucoseColor(context.state)).privacySensitive()
                 Text(context.isStale ? "Sessione da verificare: dati non aggiornati" : context.state.status)
                 if let date = context.state.readingDate {
                     HStack { Text("Età lettura:"); Text(date, style: .relative) }
@@ -20,7 +20,7 @@ struct BridgeLiveWidget: Widget {
             DynamicIsland {
                 DynamicIslandExpandedRegion(.center) {
                     VStack {
-                        Text(context.state.glucose.map { "\($0) \(Trend.symbol(context.state.direction ?? "")) mg/dL" } ?? "--").font(.title.bold()).privacySensitive()
+                        Text(context.state.glucose.map { "\($0) \(Trend.symbol(context.state.direction ?? "")) mg/dL" } ?? "--").font(.title.bold()).foregroundStyle(glucoseColor(context.state)).privacySensitive()
                         Text(context.isStale ? "DATO OBSOLETO" : context.state.status).font(.caption)
                         if let date = context.state.readingDate { Text(date, style: .relative) }
                     }
@@ -31,6 +31,7 @@ struct BridgeLiveWidget: Widget {
             } compactTrailing: {
                 Text(compactValue(context.state, stale: context.isStale))
                     .font(.system(size: 17, weight: .semibold, design: .rounded))
+                    .foregroundStyle(glucoseColor(context.state))
                     .monospacedDigit()
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
@@ -39,12 +40,17 @@ struct BridgeLiveWidget: Widget {
             } minimal: {
                 Text(compactValue(context.state, stale: context.isStale))
                     .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .foregroundStyle(glucoseColor(context.state))
                     .monospacedDigit()
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
                     .privacySensitive()
             }
         }
+    }
+    private func glucoseColor(_ state: BridgeActivityAttributes.ContentState) -> Color {
+        guard let value = state.glucose else { return .primary }
+        return value < 70 || value > 180 ? .red : .primary
     }
     private func compactValue(_ state: BridgeActivityAttributes.ContentState, stale: Bool) -> String {
         let value = state.glucose.map(String.init) ?? "--"

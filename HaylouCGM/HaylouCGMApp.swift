@@ -60,6 +60,7 @@ struct BridgeView: View {
                     VStack(spacing: 12) {
                         Text(bridge.latest == nil ? "—" : String(bridge.latest!.value))
                             .font(.system(size: 67, weight: .bold, design: .rounded))
+                            .foregroundStyle(bridge.latest.map { $0.value < 70 || $0.value > 180 } == true ? Color.red : Color.primary)
                             .monospacedDigit()
                         Text("mg/dL · \(Trend.symbol(bridge.latest?.direction ?? ""))").font(.headline)
                         if let reading = bridge.latest {
