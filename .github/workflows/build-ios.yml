@@ -8,6 +8,10 @@ permissions:
   contents: read
 jobs:
   build:
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [standard, accessory-setup]
     runs-on: macos-26
     timeout-minutes: 30
     steps:
@@ -27,9 +31,24 @@ jobs:
           /tmp/sync-test
           swiftc Shared/GlucosePoint.swift Shared/HistoryWindow.swift Tests/HistoryWindowTest.swift -o /tmp/history-test
           /tmp/history-test
+          swiftc Shared/GlucosePoint.swift HaylouCGM/RefreshPolicy.swift Tests/RefreshPolicyTest.swift -o /tmp/refresh-test
+          /tmp/refresh-test
           xcrun swiftc -frontend -parse HaylouCGM/*.swift Shared/*.swift
           xcrun swiftc -frontend -parse HaylouLiveActivity/*.swift Shared/*.swift
           # Golden reference encoder test above preserves framing/CRC/command and conversion.
+      - name: Configure experimental AccessorySetupKit IPA
+        if: matrix.variant == 'accessory-setup'
+        run: |
+          python3 - <<'PY'
+          import plistlib
+          from pathlib import Path
+          path = Path("HaylouCGM/Info.plist")
+          info = plistlib.loads(path.read_bytes())
+          info["NSAccessorySetupKitSupports"] = ["Bluetooth"]
+          info["NSAccessorySetupBluetoothServices"] = ["FEE7", "000001FF-3C17-D293-8E48-14FE2E4DA212"]
+          info["NSAccessorySetupBluetoothNames"] = ["Haylou", "HAYLOU", "haylou", "LS10", "RT2"]
+          path.write_bytes(plistlib.dumps(info))
+          PY
       - name: Genera progetto Xcode
         run: xcodegen generate
       - name: Mostra versione Xcode
@@ -50,6 +69,6 @@ jobs:
       - name: Scarica IPA dagli artifacts di Actions
         uses: actions/upload-artifact@v4
         with:
-          name: HaylouCGM-unsigned-IPA
+          name: HaylouCGM-${{ matrix.variant }}-unsigned-IPA
           path: HaylouCGM-unsigned.ipa
           retention-days: 7

@@ -21,6 +21,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
                     guard !completed else { return }
                     completed = true
                     bridge.recordEvent("BGAppRefreshTask completed success=\(success)")
+                    task.expirationHandler = nil
                     task.setTaskCompleted(success: success)
                 }
             }
@@ -100,6 +101,11 @@ struct BridgeView: View {
                             Text(bridge.bluetoothStatus).font(.subheadline).bold()
                             Button("Cerca orologio") { bridge.beginScan() }
                                 .buttonStyle(.borderedProminent)
+                            if #available(iOS 18.0, *), bridge.supportsAccessorySetup {
+                                Button("Autorizza RT2 con iOS") { bridge.authorizeAccessory() }
+                                    .buttonStyle(.bordered)
+                                Text("Seleziona il tuo RT2 nel pannello iOS. Non serve cancellare l'abbinamento; se non viene trovato reinstalla la versione standard.").font(.caption)
+                            }
                             ForEach(bridge.scanResults, id: \.identifier) { device in
                                 Button("Connetti: \(device.name ?? "Haylou")") { bridge.connect(device) }
                                     .buttonStyle(.bordered)
@@ -132,6 +138,7 @@ struct BridgeView: View {
                             Text("Ultima risposta Nightscout: \(bridge.lastNightscoutSuccess.map { df.string(from: $0) } ?? "Mai")")
                             Text("Ultima notifica dal watch: \(bridge.lastBLEEvent.map { df.string(from: $0) } ?? "Mai")")
                             Text("Notifiche BLE background che hanno attivato un controllo: \(bridge.backgroundBLEWakeCount)")
+                            Button("Inizia nuovo registro di prova") { bridge.clearEventLog() }.buttonStyle(.bordered)
                             Text(bridge.diagnostic)
                             Text("Write Without Response: richiesta di invio ≠ aggiornamento confermato del display.")
                                 .foregroundStyle(.orange)

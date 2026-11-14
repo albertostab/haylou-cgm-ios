@@ -35,3 +35,38 @@ Windows installation: Sideloadly must retain and sign the embedded LiveActivity.
 
 ## Trend icons experiment
 User requested RT2 weather icons to represent trend. Only climate=1 (sunny) has been physically verified. Proposed codes 2..6 and unknown=0 are provisional, NOT established firmware mappings: confirm visible icons before interpreting them. Proposed legend: sun Flat; partial cloud FortyFiveUp; cloud SingleUp/DoubleUp; light rain FortyFiveDown; rain SingleDown; storm DoubleDown. The RT2 mapping intentionally groups both upward rates; iPhone arrows preserve all seven standard Nightscout directions and show ? for missing/unrecognized direction. No inference of trend from glucose values. Framing/command/CRC/temperature conversion remain unchanged. The golden original sunny frame still must match exactly; each icon code is tested for valid frame/checksum. Device display/meaning still needs calibration.
+
+
+## v0.4: retry after real-device suspension evidence
+
+The supplied device log shows completed Nightscout/BLE/ActivityKit calls in some background opportunities, and long gaps where timers execute next to foreground transitions. It does not prove periodic wakeups. Two actionable defects: full-day history was fetched on every brief opportunity, and delayed reconnect could leave no pending connection before suspension.
+
+Changes:
+- Every background check fetches only the latest three entries; foreground fetches full-day history at most once per five minutes. Merge and persist the last 24 hours locally so a small response does not erase the graph. History cache contains glucose data, no URL or access token. Changing source clears this cache. Background request timeout is 15 seconds, still bounded by task expiry.
+- First unexpected disconnect immediately submits a connect request for the saved RT2; a pending connect is left with Core Bluetooth instead of duplicating it. Repeated connection failures retain bounded backoff. Each actual network opportunity also attempts saved-device recovery when no retry delay is pending.
+- Discover all services/characteristics of the selected peripheral, subscribe only characteristics advertising Notify/Indicate, and write only the existing weather characteristic. This expands observation of events such as Find Phone; their meaning is not assumed. Service invalidation rediscovery and up to three subscription retries are included. No unknown vendor commands, sensor-start commands, firmware modifications, audio or location keepalives.
+- Log short BLE payloads and time since the last weather request for correlation, timer gaps instead of claiming a wake, request scope, OS/background-refresh/low-power state at a new test. Logs can contain accessory or glucose data and should not be posted publicly. A new test-log button avoids mixing old versions with the current experiment.
+- Guard UIKit lease expiration by request generation, end the old lease before invoking callbacks, and clear BG expiration handler on completion.
+
+### Two build variants (same app identifier)
+`HaylouCGM-standard-unsigned-IPA`: current authorization model plus the changes above. Recommended first test.
+`HaylouCGM-accessory-setup-unsigned-IPA`: adds the optional iOS AccessorySetupKit authorization experiment. Because declaring ASK changes Core Bluetooth permission and discovery semantics, this is deliberately a separate IPA, not a runtime toggle in the standard build. It does NOT add an APNs entitlement, server, subscription or special signing entitlement. Free-account signing/installation and the actual RT2 authorization still require physical verification.
+
+In the ASK variant, Core Bluetooth is initialized only after the authorized saved device is obtained or the picker finishes. With a saved RT2 the system picker requests migration of that same UUID (no pairing deletion); a fresh setup filters FEE7/custom weather service plus Haylou/LS10/RT2 name. The firmware's advertised identity and system picker compatibility are unverified. No automatic switch to another device. If the picker cannot authorize the saved RT2, reinstall the standard IPA with the same signing identity to preserve local settings.
+
+Apple TN3115 note 5 describes ASK improvements for specific restoration cases (force-quit, Control Center Bluetooth toggle, some airplane-mode conditions), NOT a minute-based network wakeup. BGContinuedProcessingTask is not used: an indefinite follower poll does not have finite user work and meaningful completion progress. ASK does not fix the absence of spontaneous accessory events by itself.
+
+### Required physical comparison
+1. Install standard v0.4, keep the configured Nightscout URL/read-only token and selected RT2. Check one foreground write. Tap “Inizia nuovo registro di prova”.
+2. Ensure Background App Refresh is enabled, Low Power Mode off; do not force-quit. Lock for 30 minutes, observe actual RT2 values externally before reopening. Look for 3+ newer readings. Export log.
+3. On a separate run, after five locked minutes press Find Phone on RT2 and note exact time and whether phone rings. Wait 30 seconds; observe watch before opening app. Correlate a received HEX event BEFORE a network check or weather write. Do not call a response after our write an unsolicited wakeup.
+4. Repeat with ASK IPA, explicitly use “Autorizza RT2 con iOS” once, and verify system authorization completes before locking. Export a fresh test log. Compare observed gaps; no guaranteed cadence is claimed.
+5. Test range loss/reconnect, graph retained with latest-only checks, stale data blocked, automatic mode disabled, no duplicate GATT readiness storm.
+
+References:
+- https://developer.apple.com/documentation/technotes/tn3115-bluetooth-state-restoration-app-relaunch-rules
+- https://developer.apple.com/videos/play/wwdc2024/10203/ (ASK changes Core Bluetooth visibility)
+- https://developer.apple.com/documentation/accessorysetupkit/discovering-and-configuring-accessories
+- https://developer.apple.com/documentation/backgroundtasks/bgcontinuedprocessingtask
+
+No v0.4 physical result has yet been measured. Compilation and unit tests are necessary but insufficient to claim continuous background updates.
