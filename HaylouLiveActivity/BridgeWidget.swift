@@ -26,11 +26,29 @@ struct BridgeLiveWidget: Widget {
                     }
                 }
                 DynamicIslandExpandedRegion(.bottom) { Text("Display non confermato").font(.caption) }
-            } compactLeading: { Text(context.isStale ? "!" : Trend.symbol(context.state.direction ?? "")) } compactTrailing: {
-                Text(context.state.glucose.map(String.init) ?? "--").privacySensitive()
+            } compactLeading: {
+                EmptyView()
+            } compactTrailing: {
+                Text(compactValue(context.state, stale: context.isStale))
+                    .font(.system(size: 17, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                    .privacySensitive()
+                    .accessibilityLabel("Glicemia " + compactValue(context.state, stale: context.isStale))
             } minimal: {
-                Text(context.isStale ? "!" : (context.state.glucose.map(String.init) ?? "--") + Trend.symbol(context.state.direction ?? "")).privacySensitive()
+                Text(compactValue(context.state, stale: context.isStale))
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                    .privacySensitive()
             }
         }
+    }
+    private func compactValue(_ state: BridgeActivityAttributes.ContentState, stale: Bool) -> String {
+        let value = state.glucose.map(String.init) ?? "--"
+        // Never present an old trend as current.
+        return value + " " + (stale ? "!" : Trend.symbol(state.direction ?? ""))
     }
 }
