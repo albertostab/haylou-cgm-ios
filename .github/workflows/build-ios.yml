@@ -25,6 +25,8 @@ jobs:
         run: |
           swiftc HaylouCGM/WeatherCodec.swift Tests/CodecSelfTest.swift -o /tmp/haylou-codec-test
           /tmp/haylou-codec-test
+          swiftc HaylouCGM/WeatherCodec.swift HaylouCGM/WatchEventCodec.swift Tests/WatchEventCodecTest.swift -o /tmp/watch-event-test
+          /tmp/watch-event-test
       - name: Test sincronizzazione e analisi sintassi Swift
         run: |
           swiftc HaylouCGM/SyncPolicy.swift Shared/Trend.swift Tests/SyncPolicyTest.swift -o /tmp/sync-test

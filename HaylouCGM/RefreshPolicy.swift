@@ -15,6 +15,9 @@ enum RefreshPolicy {
         }
         return values.values.sorted { $0.date < $1.date }
     }
+    static func findPhoneCheckDue(lastCheck: Date?, now: Date) -> Bool {
+        now.timeIntervalSince(lastCheck ?? .distantPast) >= 5
+    }
     static func bleCheckDue(lastSuccess: Date?, lastAttempt: Date?, now: Date) -> Bool {
         now.timeIntervalSince(lastSuccess ?? .distantPast) >= 55 &&
         now.timeIntervalSince(lastAttempt ?? .distantPast) >= 15

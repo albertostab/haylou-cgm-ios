@@ -13,6 +13,9 @@ import Foundation
         precondition(RefreshPolicy.bleCheckDue(lastSuccess: now.addingTimeInterval(-60), lastAttempt: now.addingTimeInterval(-20), now: now))
         precondition(!RefreshPolicy.bleCheckDue(lastSuccess: now.addingTimeInterval(-10), lastAttempt: now.addingTimeInterval(-20), now: now))
         precondition(!RefreshPolicy.bleCheckDue(lastSuccess: nil, lastAttempt: now.addingTimeInterval(-5), now: now))
+        precondition(RefreshPolicy.findPhoneCheckDue(lastCheck: nil, now: now))
+        precondition(!RefreshPolicy.findPhoneCheckDue(lastCheck: now.addingTimeInterval(-4), now: now))
+        precondition(RefreshPolicy.findPhoneCheckDue(lastCheck: now.addingTimeInterval(-5), now: now))
         print("PASS: lightweight background policy; history merge/dedup/retention; BLE event checks and failure retry rate limits")
     }
 }

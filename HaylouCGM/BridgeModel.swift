@@ -44,6 +44,8 @@ final class BridgeModel: NSObject, ObservableObject, CBCentralManagerDelegate, C
     private var lastHistoryFetch: Date?
     private var accessoryCoordinator: AnyObject?
     private var lastTimerFired: Date?
+    private var eventStreams: [String: WatchEventStream] = [:]
+    private var lastFindPhoneCheck: Date?
     private var pendingServices = Set<CBUUID>()
     private var notificationRetries: [String: Int] = [:]
     private var central: CBCentralManager!
@@ -75,7 +77,7 @@ final class BridgeModel: NSObject, ObservableObject, CBCentralManagerDelegate, C
         UserDefaults.standard.set(eventLog, forKey: "background-event-log")
     }
     var diagnosticExport: String {
-        "Haylou CGM v0.4 lightweight background + accessory setup; display never confirmed; age of last queued reading: \(lastQueuedReading > 0 ? String(Int(Date().timeIntervalSince1970 - Double(lastQueuedReading) / 1000)) : "unknown") seconds\n" + eventLog.reversed().joined(separator: "\n")
+        "Haylou CGM v0.4.1 watch-event parser; display never confirmed; age of last queued reading: \(lastQueuedReading > 0 ? String(Int(Date().timeIntervalSince1970 - Double(lastQueuedReading) / 1000)) : "unknown") seconds\n" + eventLog.reversed().joined(separator: "\n")
     }
     private func endLease() {
         guard backgroundLease != .invalid else { return }
@@ -104,7 +106,7 @@ final class BridgeModel: NSObject, ObservableObject, CBCentralManagerDelegate, C
         peripheral.discoverServices(nil)
     }
     private func resetGATT() {
-        discovering = false; readyHandled = false; subscriptions.removeAll(); pendingServices.removeAll(); notificationRetries.removeAll(); writeCharacteristic = nil
+        discovering = false; readyHandled = false; subscriptions.removeAll(); pendingServices.removeAll(); notificationRetries.removeAll(); eventStreams.removeAll(); writeCharacteristic = nil
     }
     func startLiveActivity() {
         guard UIApplication.shared.applicationState == .active else { return }
@@ -555,13 +557,26 @@ final class BridgeModel: NSObject, ObservableObject, CBCentralManagerDelegate, C
         // Senza eventi l'iPhone non garantisce polling periodico; non forzare timer falsi.
         let secondsSinceWrite = lastQueued.map { Int(Date().timeIntervalSince($0)) } ?? -1
         recordEvent("BLE received hex=\(lastReply); seconds since weather write=\(secondsSinceWrite); event meaning unclassified")
-        guard automatic, !inFlight else { return }
         let now = Date()
-        guard RefreshPolicy.bleCheckDue(lastSuccess: lastNightscoutSuccess, lastAttempt: lastNightscoutCheck, now: now) else { return }
+        let key = "\(characteristic.service?.uuid.uuidString ?? "")/\(characteristic.uuid.uuidString)"
+        var stream = eventStreams[key] ?? WatchEventStream()
+        let events = stream.receive(Array(data), now: now)
+        eventStreams[key] = stream
+        for event in events { recordEvent("BLE classification: \(event.label)") }
+        guard automatic else { return }
+        let findPhone = events.contains(.findPhoneStart)
+        if findPhone {
+            guard RefreshPolicy.findPhoneCheckDue(lastCheck: lastFindPhoneCheck, now: now) else { return }
+            lastFindPhoneCheck = now
+        } else {
+            // Neither complete weather ACKs nor fragments may cause network polling.
+            guard events.contains(.other), secondsSinceWrite < 0 || secondsSinceWrite >= 5,
+                  RefreshPolicy.bleCheckDue(lastSuccess: lastNightscoutSuccess, lastAttempt: lastNightscoutCheck, now: now) else { return }
+        }
         if UIApplication.shared.applicationState != .active { backgroundBLEWakeCount += 1 }
         UserDefaults.standard.set(backgroundBLEWakeCount, forKey: "background-ble-wake-count")
-        recordEvent("BLE event: Nightscout check due; this does not prove suspension wake")
-        refreshNow(reason: "notifica BLE (foreground/background state in preceding event)")
+        recordEvent(findPhone ? "Find Phone start: explicit wrist refresh requested" : "Unclassified BLE event: throttled refresh; not proof of spontaneous wake")
+        refreshNow(reason: findPhone ? "findPhoneStart" : "unclassified BLE event")
     }
     func peripheralIsReady(toSendWriteWithoutResponse peripheral: CBPeripheral) {
         if automatic, let pending = latest { sendIfNew(pending) }
