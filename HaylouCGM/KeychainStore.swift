@@ -1,10 +1,8 @@
 import Foundation
 import Security
-
 enum KeychainStore {
     private static let service = "it.albertostabile.haylou-cgm.nightscout"
     private static let account = "readable-token"
-
     static func load() -> String {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -19,7 +17,6 @@ enum KeychainStore {
               let token = String(data: data, encoding: .utf8) else { return "" }
         return token
     }
-
     @discardableResult
     static func save(_ token: String) -> Bool {
         let query: [String: Any] = [

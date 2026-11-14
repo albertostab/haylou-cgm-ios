@@ -14,6 +14,11 @@ import Foundation
         precondition(WeatherCodec.approximate(180)?.shownFahrenheit == 179 || WeatherCodec.approximate(180)?.shownFahrenheit == 181)
         precondition(WeatherCodec.approximate(261) == nil)
         precondition(WeatherCodec.approximate(39) == nil)
+        for code in 0...6 {
+            let packet = try WeatherCodec.build(temperature: 25, climate: code, at: fixedNow)
+            precondition(WeatherCodec.validate(packet))
+            precondition(packet.count == example.count)
+        }
         print("PASS: frame di riferimento RT2, 162 byte, CRC e checksum, conversioni")
     }
 }

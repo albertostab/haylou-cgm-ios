@@ -88,13 +88,13 @@ enum WeatherCodec {
     /// Date sempre Europe/Rome, per evitare lo slittamento di un giorno già visto sul watch.
     /// Dal test riuscito: cmd seconds=ora UTC, weather.seconds=mezzanotte locale,
     /// timezone=1 in inverno / 2 in estate; climate=1 (sole).
-    static func build(temperature: Int, at now: Date = Date()) throws -> [UInt8] {
+    static func build(temperature: Int, climate: Int = 1, at now: Date = Date()) throws -> [UInt8] {
         try build(temperatures: Array(repeating: temperature, count: 4),
                   maxima: Array(repeating: temperature, count: 4),
-                  minima: Array(repeating: temperature, count: 4), at: now)
+                  minima: Array(repeating: temperature, count: 4), at: now, climate: climate)
     }
-    static func build(temperatures: [Int], maxima: [Int], minima: [Int], at now: Date) throws -> [UInt8] {
-        guard temperatures.count == 4, maxima.count == 4, minima.count == 4,
+    static func build(temperatures: [Int], maxima: [Int], minima: [Int], at now: Date, climate: Int = 1) throws -> [UInt8] {
+        guard (0...6).contains(climate), temperatures.count == 4, maxima.count == 4, minima.count == 4,
               (temperatures + maxima + minima).allSatisfy({ (0...127).contains($0) }) else { throw EncodingError.range }
         var cal = Calendar(identifier: .gregorian)
         guard let timezone = TimeZone(identifier: "Europe/Rome") else { throw EncodingError.malformed }
@@ -104,7 +104,7 @@ enum WeatherCodec {
             guard let d = cal.date(byAdding: .day, value: i, to: now) else { throw EncodingError.malformed }
             let midnight = Int64(cal.startOfDay(for: d).timeIntervalSince1970)
             let record = uint(1, Int64(i))
-                + uint(2, 1) // Sole: codice già validato sul display reale.
+                + uint(2, Int64(climate)) // Existing climate field; default sunny=1 preserves reference frame.
                 + uint(3, Int64(temperatures[i]))
                 + uint(4, Int64(18 - i))
                 + uint(5, Int64(27 - i))
