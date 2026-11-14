@@ -25,6 +25,8 @@ jobs:
         run: |
           swiftc HaylouCGM/SyncPolicy.swift Shared/Trend.swift Tests/SyncPolicyTest.swift -o /tmp/sync-test
           /tmp/sync-test
+          swiftc Shared/GlucosePoint.swift Shared/HistoryWindow.swift Tests/HistoryWindowTest.swift -o /tmp/history-test
+          /tmp/history-test
           xcrun swiftc -frontend -parse HaylouCGM/*.swift Shared/*.swift
           xcrun swiftc -frontend -parse HaylouLiveActivity/*.swift Shared/*.swift
           # Golden reference encoder test above preserves framing/CRC/command and conversion.
