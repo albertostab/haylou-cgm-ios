@@ -4,57 +4,73 @@ import SwiftUI
 @main struct BridgeWidgets: WidgetBundle {
     var body: some Widget { BridgeLiveWidget() }
 }
+struct GlucoseSparkline: View {
+    let points: [GlucosePoint]
+    var body: some View {
+        Canvas { context, size in
+            guard points.count > 1, let first = points.first, let last = points.last else { return }
+            let duration = max(1, last.date.timeIntervalSince(first.date))
+            let low = Double(min(60, points.map(\.value).min() ?? 60)) - 10
+            let high = Double(max(190, points.map(\.value).max() ?? 190)) + 10
+            func position(_ point: GlucosePoint) -> CGPoint {
+                CGPoint(x: point.date.timeIntervalSince(first.date) / duration * size.width,
+                        y: (high - Double(point.value)) / (high - low) * size.height)
+            }
+            for threshold in [70.0, 180.0] {
+                let y = (high - threshold) / (high - low) * size.height
+                var path = Path(); path.move(to: CGPoint(x: 0, y: y)); path.addLine(to: CGPoint(x: size.width, y: y))
+                context.stroke(path, with: .color(.gray.opacity(0.4)), style: StrokeStyle(lineWidth: 0.5, dash: [3,3]))
+            }
+            for i in 1..<points.count {
+                let a = points[i-1], b = points[i]
+                guard b.date.timeIntervalSince(a.date) <= 900 else { continue }
+                var path = Path(); path.move(to: position(a)); path.addLine(to: position(b))
+                let outside = a.value < 70 || a.value > 180 || b.value < 70 || b.value > 180
+                context.stroke(path, with: .color(outside ? .red : .white), style: StrokeStyle(lineWidth: 2, lineCap: .round))
+            }
+        }.accessibilityLabel("Andamento glicemia; rosso fuori 70–180")
+    }
+}
 struct BridgeLiveWidget: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: BridgeActivityAttributes.self) { context in
-            VStack(alignment: .leading) {
-                Text("Haylou CGM · sessione sperimentale").font(.headline)
-                Text(context.state.glucose.map { "\($0) \(Trend.symbol(context.state.direction ?? "")) mg/dL" } ?? "In attesa di lettura").font(.largeTitle.bold()).foregroundStyle(glucoseColor(context.state)).privacySensitive()
-                Text(context.isStale ? "Sessione da verificare: dati non aggiornati" : context.state.status)
-                if let date = context.state.readingDate {
-                    HStack { Text("Età lettura:"); Text(date, style: .relative) }
+            HStack(spacing: 16) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(value(context.state, stale: context.isStale))
+                        .font(.system(size: 32, weight: .semibold, design: .rounded))
+                        .monospacedDigit().foregroundStyle(color(context.state))
+                    if context.isStale { Text("Dato vecchio").font(.caption2).foregroundStyle(.orange) }
                 }
-                Text("Display RT2 non confermato · nessuna frequenza garantita").font(.caption)
-            }.padding().activityBackgroundTint(.black).activitySystemActionForegroundColor(.white)
+                GlucoseSparkline(points: context.state.history ?? []).frame(height: 44)
+                    .opacity(context.isStale ? 0.4 : 1)
+            }.padding(.horizontal, 16).padding(.vertical, 10).privacySensitive()
+                .activityBackgroundTint(.black).activitySystemActionForegroundColor(.white)
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.center) {
-                    VStack {
-                        Text(context.state.glucose.map { "\($0) \(Trend.symbol(context.state.direction ?? "")) mg/dL" } ?? "--").font(.title.bold()).foregroundStyle(glucoseColor(context.state)).privacySensitive()
-                        Text(context.isStale ? "DATO OBSOLETO" : context.state.status).font(.caption)
-                        if let date = context.state.readingDate { Text(date, style: .relative) }
-                    }
+                    HStack(spacing: 12) {
+                        Text(value(context.state, stale: context.isStale)).font(.title2.bold()).foregroundStyle(color(context.state))
+                        GlucoseSparkline(points: context.state.history ?? []).frame(height: 34)
+                    }.privacySensitive()
                 }
-                DynamicIslandExpandedRegion(.bottom) { Text("Display non confermato").font(.caption) }
             } compactLeading: {
-                EmptyView()
-            } compactTrailing: {
-                Text(compactValue(context.state, stale: context.isStale))
+                Text(value(context.state, stale: context.isStale))
                     .font(.system(size: 17, weight: .semibold, design: .rounded))
-                    .foregroundStyle(glucoseColor(context.state))
-                    .monospacedDigit()
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-                    .privacySensitive()
-                    .accessibilityLabel("Glicemia " + compactValue(context.state, stale: context.isStale))
-            } minimal: {
-                Text(compactValue(context.state, stale: context.isStale))
+                    .monospacedDigit().foregroundStyle(color(context.state))
+                    .lineLimit(1).minimumScaleFactor(0.8).privacySensitive()
+            } compactTrailing: { EmptyView() } minimal: {
+                Text(value(context.state, stale: context.isStale))
                     .font(.system(size: 12, weight: .semibold, design: .rounded))
-                    .foregroundStyle(glucoseColor(context.state))
-                    .monospacedDigit()
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-                    .privacySensitive()
+                    .monospacedDigit().foregroundStyle(color(context.state))
+                    .lineLimit(1).minimumScaleFactor(0.7).privacySensitive()
             }
         }
     }
-    private func glucoseColor(_ state: BridgeActivityAttributes.ContentState) -> Color {
-        guard let value = state.glucose else { return .primary }
-        return value < 70 || value > 180 ? .red : .primary
+    private func color(_ state: BridgeActivityAttributes.ContentState) -> Color {
+        guard let value = state.glucose else { return .white }
+        return value < 70 || value > 180 ? .red : .white
     }
-    private func compactValue(_ state: BridgeActivityAttributes.ContentState, stale: Bool) -> String {
-        let value = state.glucose.map(String.init) ?? "--"
-        // Never present an old trend as current.
-        return value + " " + (stale ? "!" : Trend.symbol(state.direction ?? ""))
+    private func value(_ state: BridgeActivityAttributes.ContentState, stale: Bool) -> String {
+        (state.glucose.map(String.init) ?? "--") + " " + (stale ? "!" : Trend.symbol(state.direction ?? ""))
     }
 }

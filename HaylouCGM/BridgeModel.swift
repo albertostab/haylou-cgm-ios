@@ -40,6 +40,7 @@ final class BridgeModel: NSObject, ObservableObject, CBCentralManagerDelegate, C
         let direction: String?
         let type: String?
     }
+    private var activityHistory: [GlucosePoint] = []
     private var central: CBCentralManager!
     private var activePeripheral: CBPeripheral?
     private var writeCharacteristic: CBCharacteristic?
@@ -209,7 +210,7 @@ final class BridgeModel: NSObject, ObservableObject, CBCentralManagerDelegate, C
         let generation = requestGeneration
         requestCompletions.append(completion)
         var components = URLComponents(url: base.appendingPathComponent("api/v1/entries/sgv.json"), resolvingAgainstBaseURL: false)
-        var items = [URLQueryItem(name: "count", value: "3")]
+        var items = [URLQueryItem(name: "count", value: "40")]
         if !token.isEmpty { items.append(URLQueryItem(name: "token", value: token)) }
         components?.queryItems = items
         guard let apiURL = components?.url else {
@@ -247,8 +248,9 @@ final class BridgeModel: NSObject, ObservableObject, CBCentralManagerDelegate, C
                         self.finishRefresh(false); return
                     }
                     self.recordEvent("CGM timestamp=\(fresh.timestampMS); age=\(Int(fresh.ageSeconds))s")
+                    self.activityHistory = readings.reversed().map { GlucosePoint(date: $0.date, value: $0.value) }
                     self.latest = fresh
-                    LiveSession.shared.update(direction: fresh.direction, glucose: fresh.value, reading: fresh.date, write: self.lastQueued, status: fresh.fresh ? "Nightscout recente; display non confermato" : "Dato obsoleto: invio bloccato")
+                    LiveSession.shared.update(history: self.activityHistory, direction: fresh.direction, glucose: fresh.value, reading: fresh.date, write: self.lastQueued, status: fresh.fresh ? "Nightscout recente; display non confermato" : "Dato obsoleto: invio bloccato")
                     self.lastNightscoutSuccess = Date()
                     UserDefaults.standard.set(self.lastNightscoutSuccess, forKey: "last-nightscout-success")
                     self.recordEvent(fresh.fresh ? "Nightscout: risposta valida" : "Nightscout: risposta obsoleta, non inviata")
@@ -319,7 +321,7 @@ final class BridgeModel: NSObject, ObservableObject, CBCentralManagerDelegate, C
             peripheral.writeValue(Data(bytes), for: characteristic, type: .withoutResponse)
             lastQueuedReading = reading.timestampMS
             lastQueued = Date()
-            LiveSession.shared.update(direction: reading.direction, glucose: reading.value, reading: reading.date, write: lastQueued, status: "Invio BLE richiesto; display non confermato")
+            LiveSession.shared.update(history: activityHistory, direction: reading.direction, glucose: reading.value, reading: reading.date, write: lastQueued, status: "Invio BLE richiesto; display non confermato")
             UserDefaults.standard.set(Int(reading.timestampMS), forKey: "last-queued-ms")
             UserDefaults.standard.set(lastQueued, forKey: "last-queued-at")
             diagnostic = "Scrittura BLE richiesta: \(reading.value) mg/dL → \(approx.shownFahrenheit) °F (±\(approx.difference)). Ricezione non confermata."
