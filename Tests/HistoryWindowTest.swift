@@ -10,7 +10,8 @@ import Foundation
         precondition(output.contains { $0.value == 45 })
         precondition(output.contains { $0.value == 270 })
         precondition(!output.contains { $0.value == 500 })
-        precondition(try JSONEncoder().encode(output).count < 3500)
+        let payload = try JSONEncoder().encode(output)
+        precondition(payload.count < 3500)
         print("PASS: six-hour envelope, extremes retained, ActivityKit payload bounded")
     }
 }
