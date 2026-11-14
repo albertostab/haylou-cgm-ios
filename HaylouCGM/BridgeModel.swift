@@ -46,6 +46,7 @@ final class BridgeModel: NSObject, ObservableObject, CBCentralManagerDelegate, C
     private var writeCharacteristic: CBCharacteristic?
     private var timer: Timer?
     private var inFlight = false
+    private var backgroundLease: UIBackgroundTaskIdentifier = .invalid
     private var requestGeneration = UUID()
     private var requestStarted: Date?
     private var requestCompletions: [(Bool) -> Void] = []
@@ -71,19 +72,25 @@ final class BridgeModel: NSObject, ObservableObject, CBCentralManagerDelegate, C
         UserDefaults.standard.set(eventLog, forKey: "background-event-log")
     }
     var diagnosticExport: String {
-        "Haylou CGM diagnostics; display never confirmed; age of last queued reading: \(lastQueuedReading > 0 ? String(Int(Date().timeIntervalSince1970 - Double(lastQueuedReading) / 1000)) : "unknown") seconds\n" + eventLog.reversed().joined(separator: "\n")
+        "Haylou CGM v0.3 refresh lifecycle fix; display never confirmed; age of last queued reading: \(lastQueuedReading > 0 ? String(Int(Date().timeIntervalSince1970 - Double(lastQueuedReading) / 1000)) : "unknown") seconds\n" + eventLog.reversed().joined(separator: "\n")
+    }
+    private func endLease() {
+        guard backgroundLease != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(backgroundLease); backgroundLease = .invalid
     }
     func cancelRefresh() {
         requestGeneration = UUID()
         requestTask?.cancel(); requestTask = nil; inFlight = false; requestStarted = nil
         let callbacks = requestCompletions; requestCompletions = []
         callbacks.forEach { $0(false) }
+        endLease()
         recordEvent("BG task expired: network cancellation requested")
     }
     private func finishRefresh(_ success: Bool) {
         inFlight = false; requestStarted = nil; requestTask = nil
         let callbacks = requestCompletions; requestCompletions = []
         callbacks.forEach { $0(success) }
+        endLease()
     }
     private func discoverOnce(_ peripheral: CBPeripheral) {
         guard peripheral.identifier == activePeripheral?.identifier,
@@ -206,6 +213,10 @@ final class BridgeModel: NSObject, ObservableObject, CBCentralManagerDelegate, C
             completion(false); return
         }
         inFlight = true
+        backgroundLease = UIApplication.shared.beginBackgroundTask(withName: "Nightscout and ActivityKit refresh") { [weak self] in
+            DispatchQueue.main.async { self?.recordEvent("Finite background execution expired"); self?.cancelRefresh() }
+        }
+        recordEvent("Nightscout request execution state=\(UIApplication.shared.applicationState.rawValue); finite lease=\(backgroundLease != .invalid)")
         requestStarted = Date(); requestGeneration = UUID()
         let generation = requestGeneration
         requestCompletions.append(completion)
@@ -254,13 +265,15 @@ final class BridgeModel: NSObject, ObservableObject, CBCentralManagerDelegate, C
                     self.activityHistory = history.map { GlucosePoint(date: $0.date, value: $0.value) }
                     self.recordEvent("Nightscout 24h history: \(history.count) readings")
                     self.latest = fresh
-                    LiveSession.shared.update(history: self.activityHistory, direction: fresh.direction, glucose: fresh.value, reading: fresh.date, write: self.lastQueued, status: fresh.fresh ? "Nightscout recente; display non confermato" : "Dato obsoleto: invio bloccato")
                     self.lastNightscoutSuccess = Date()
                     UserDefaults.standard.set(self.lastNightscoutSuccess, forKey: "last-nightscout-success")
                     self.recordEvent(fresh.fresh ? "Nightscout: risposta valida" : "Nightscout: risposta obsoleta, non inviata")
                     self.nightscoutStatus = fresh.fresh ? "Lettura ricevuta da Nightscout" : "Lettura vecchia: invio bloccato"
                     if self.automatic { self.sendIfNew(fresh) }
-                    self.finishRefresh(true)
+                    LiveSession.shared.update(history: self.activityHistory, direction: fresh.direction, glucose: fresh.value, reading: fresh.date, write: self.lastQueued, status: fresh.fresh ? "Nightscout recente; display non confermato" : "Dato obsoleto: invio bloccato", log: self.recordEvent) {
+                        guard generation == self.requestGeneration else { return }
+                        self.finishRefresh(true)
+                    }
                 } catch {
                     self.nightscoutStatus = "Risposta Nightscout non decodificabile"
                     self.finishRefresh(false)
@@ -325,7 +338,6 @@ final class BridgeModel: NSObject, ObservableObject, CBCentralManagerDelegate, C
             peripheral.writeValue(Data(bytes), for: characteristic, type: .withoutResponse)
             lastQueuedReading = reading.timestampMS
             lastQueued = Date()
-            LiveSession.shared.update(history: activityHistory, direction: reading.direction, glucose: reading.value, reading: reading.date, write: lastQueued, status: "Invio BLE richiesto; display non confermato")
             UserDefaults.standard.set(Int(reading.timestampMS), forKey: "last-queued-ms")
             UserDefaults.standard.set(lastQueued, forKey: "last-queued-at")
             diagnostic = "Scrittura BLE richiesta: \(reading.value) mg/dL → \(approx.shownFahrenheit) °F (±\(approx.difference)). Ricezione non confermata."

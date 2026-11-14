@@ -3,7 +3,7 @@ import Foundation
 final class LiveSession {
     static let shared = LiveSession()
     private var activity: Activity<BridgeActivityAttributes>?
-    var isActive: Bool { Activity<BridgeActivityAttributes>.activities.contains { $0.activityState == .active } }
+    var isActive: Bool { Activity<BridgeActivityAttributes>.activities.contains { $0.activityState == .active || $0.activityState == .stale } }
     func start(log: (String) -> Void) {
         guard ActivityAuthorizationInfo().areActivitiesEnabled else {
             log("Live Activity unavailable/disabled in iOS settings"); return
@@ -18,12 +18,20 @@ final class LiveSession {
             log("Live Activity started in foreground; background benefit unverified")
         } catch { log("Live Activity start failed code=\((error as NSError).code)") }
     }
-    func update(history: [GlucosePoint], direction: String, glucose: Int?, reading: Date?, write: Date?, status: String) {
-        guard let activity = activity ?? Activity<BridgeActivityAttributes>.activities.first else { return }
+    func update(history: [GlucosePoint], direction: String, glucose: Int?, reading: Date?, write: Date?, status: String, log: @escaping (String) -> Void = { _ in }, completion: @escaping () -> Void = {}) {
+        guard let activity = Activity<BridgeActivityAttributes>.activities.first(where: { $0.activityState == .active || $0.activityState == .stale }) else { log("Live Activity update skipped: no updatable activity"); completion(); return }
         let now = Date()
         let state = BridgeActivityAttributes.ContentState(packedHistory: HistoryWindow.pack(history, now: now), historyAnchor: now, selectedHours: activity.content.state.selectedHours ?? 6, direction: direction, glucose: glucose, readingDate: reading, writeDate: write, status: status)
-        Task { await activity.update(ActivityContent(state: state,
-            staleDate: reading?.addingTimeInterval(720) ?? Date().addingTimeInterval(60))) }
+        guard let payload = try? JSONEncoder().encode(state), payload.count < 3800 else {
+            log("Live Activity update skipped: payload exceeds safe budget"); completion(); return
+        }
+        log("Live Activity update started; bytes=\(payload.count)")
+        Task { @MainActor in
+            await activity.update(ActivityContent(state: state,
+                staleDate: reading?.addingTimeInterval(180) ?? Date().addingTimeInterval(60)))
+            log("Live Activity update call completed; state=\(activity.activityState); visual rendering not confirmed")
+            completion()
+        }
     }
     func stop(log: (String) -> Void) {
         let activities = Activity<BridgeActivityAttributes>.activities
