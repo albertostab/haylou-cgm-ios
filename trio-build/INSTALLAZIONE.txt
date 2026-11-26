@@ -1,0 +1,37 @@
+TRIO 1.0.2 - BUILD TECNICA NON FIRMATA
+
+Questa IPA deriva dalla release ufficiale nightscout/Trio v1.0.2,
+commit 0b29cd53415e7f0e668677749cad8daf81c68c2f, con i submodule originali.
+Algoritmo, driver Omnipod/G7, impostazioni e controlli di sicurezza non modificati.
+
+Sideloadly installa e firma una IPA; non compila i sorgenti e non dimostra
+che il ciclo di erogazione funzioni. Con un Apple ID gratuito la firma
+scade dopo 7 giorni. Non fare affidamento sul rinnovo automatico senza
+aver verificato che il PC e Sideloadly lo completino effettivamente.
+
+Leggere provenance.json: se indica un Team ID PLACEHOLDER, questo e' ancora
+un controllo di compilazione. Servono il Team ID reale e una verifica degli
+App Groups/firma; non basta che l'icona compaia sull'iPhone.
+Nessuna installazione su iPhone 17 Pro Max / iOS 27.2.1 e' stata provata.
+
+Il percorso documentato Trio per Windows/browser usa un Apple Developer
+Program a pagamento e TestFlight. Il percorso gratuito documentato usa
+Xcode su Mac e richiede la rimozione di capability non disponibili.
+Windows + questa IPA + Sideloadly e' una procedura tecnica da verificare,
+non la procedura ufficiale documentata per Trio.
+
+Prima di un qualsiasi uso con il Pod servono verifica dell'avvio, persistenza
+dei dati, letture reali G7, allarmi, riconnessione e background sul telefono,
+e preparazione delle impostazioni terapeutiche con supporto competente.
+Non associare un Pod attivo per controllare semplicemente se l'app si apre.
+
+Con Trio il controllo del Pod passa dall'algoritmo SmartAdjust a Trio
+sull'iPhone. Il telefono diventa necessario per il ciclo automatico.
+Installare un'app o compilare con successo non dimostra sicurezza terapeutica.
+
+Riferimenti:
+https://triodocs.org/install/build/requirements/apple-developer/
+https://triodocs.org/install/build/mac/build/
+https://triodocs.org/install/build/requirements/devices/pump/
+https://triodocs.org/install/build/requirements/devices/cgm/
+https://github.com/nightscout/Trio/releases/tag/v1.0.2

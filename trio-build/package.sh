@@ -1,0 +1,16 @@
+#!/bin/bash
+set -euo pipefail
+app="$RUNNER_TEMP/Trio.xcarchive/Products/Applications/Trio.app"
+out="$GITHUB_WORKSPACE/artifacts"
+package="$RUNNER_TEMP/trio-package"
+test -d "$app"
+mkdir -p "$out" "$package/Payload"
+ditto "$app" "$package/Payload/Trio.app"
+cd "$package"
+ditto -c -k --keepParent Payload "$out/Trio-1.0.2-unsigned.ipa"
+cd "$GITHUB_WORKSPACE"
+python3 build-control/trio-build/verify.py "$app" "$out/Trio-1.0.2-unsigned.ipa" "$out/provenance.json"
+cp build-control/trio-build/INSTALLAZIONE.txt "$out/INSTALLAZIONE.txt"
+git -C upstream submodule status --recursive > "$out/submodules.txt"
+xcodebuild -version > "$out/xcode-version.txt"
+echo 'Unsigned compilation completed. Physical iPhone installation, signing, G7, Pod, alarms and background execution have NOT been validated.' >> "$GITHUB_STEP_SUMMARY"

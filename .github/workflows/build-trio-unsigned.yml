@@ -1,0 +1,109 @@
+name: Trio 1.0.2 unsigned build check
+
+on:
+  push:
+    branches: [trio-unsigned-v1.0.2]
+    paths:
+      - .github/workflows/build-trio-unsigned.yml
+      - trio-build/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: trio-unsigned-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TRIO_COMMIT: 0b29cd53415e7f0e668677749cad8daf81c68c2f
+
+jobs:
+  algorithm-tests:
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          path: build-control
+          persist-credentials: false
+      - uses: actions/checkout@v5
+        with:
+          repository: nightscout/Trio
+          ref: ${{ env.TRIO_COMMIT }}
+          path: upstream
+          persist-credentials: false
+      - name: Select Xcode
+        run: bash build-control/trio-build/select-xcode.sh
+      - name: Run upstream algorithm unit tests
+        working-directory: upstream
+        run: |
+          set -o pipefail
+          swift test --package-path AlgorithmPackage 2>&1 | tee "$RUNNER_TEMP/trio-algorithm-tests.log"
+      - name: Upload test output
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: Trio-1.0.2-algorithm-test-log
+          path: ${{ runner.temp }}/trio-algorithm-tests.log
+          if-no-files-found: ignore
+
+  device-build:
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          path: build-control
+          persist-credentials: false
+      - uses: actions/checkout@v5
+        with:
+          repository: nightscout/Trio
+          ref: ${{ env.TRIO_COMMIT }}
+          path: upstream
+          submodules: recursive
+          persist-credentials: false
+      - name: Select Xcode
+        run: bash build-control/trio-build/select-xcode.sh
+      - name: Prepare unsigned build configuration
+        run: python3 build-control/trio-build/prepare.py upstream
+      - name: Archive unmodified Trio for a physical iPhone
+        working-directory: upstream
+        run: |
+          set -o pipefail
+          xcodebuild archive \
+            -workspace Trio.xcworkspace \
+            -scheme Trio \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/Trio.xcarchive" \
+            -derivedDataPath "$RUNNER_TEMP/TrioDerivedData" \
+            -onlyUsePackageVersionsFromResolvedFile \
+            -skipPackagePluginValidation \
+            -skipMacroValidation \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY= \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            2>&1 | tee "$RUNNER_TEMP/trio-build.log"
+      - name: Package and inspect the unsigned IPA
+        run: bash build-control/trio-build/package.sh
+      - name: Surface compiler errors
+        if: failure()
+        run: |
+          if [ -f "$RUNNER_TEMP/trio-build.log" ]; then
+            grep -nE 'error:|Undefined symbol|BUILD FAILED|ARCHIVE FAILED|PhaseScriptExecution failed' "$RUNNER_TEMP/trio-build.log" | tail -n 60 || true
+          fi
+      - name: Upload unsigned app and provenance
+        uses: actions/upload-artifact@v6
+        with:
+          name: Trio-1.0.2-unsigned-IPA
+          path: ${{ github.workspace }}/artifacts/
+          if-no-files-found: error
+      - name: Upload archive log
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: Trio-1.0.2-build-log
+          path: ${{ runner.temp }}/trio-build.log
+          if-no-files-found: ignore
